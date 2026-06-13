@@ -36,6 +36,9 @@ class TurnAction:
     summary: str
     unit_ids: List[str] = field(default_factory=list)
     path: List[str] = field(default_factory=list)
+    color: Optional[str] = None
+    action_name: Optional[str] = None
+    payload: dict = field(default_factory=dict)
     before: Optional[dict] = field(default=None, repr=False)
 
     def to_dict(self) -> dict:
@@ -226,6 +229,10 @@ def _record_turn_action(
     summary: str,
     unit_ids: Optional[List[str]] = None,
     path: Optional[List[str]] = None,
+    color: Optional[str] = None,
+    action_name: Optional[str] = None,
+    payload: Optional[dict] = None,
+    clear_redo: bool = True,
 ) -> None:
     game.turn_history.append(
         TurnAction(
@@ -235,24 +242,42 @@ def _record_turn_action(
             summary=summary,
             unit_ids=unit_ids or [],
             path=path or [],
+            color=color,
+            action_name=action_name,
+            payload=copy.deepcopy(payload) if payload is not None else {},
             before=before,
         )
     )
     game.next_action_id += 1
-    game.redo_snapshot = None
-    game.redo_label = None
+    if clear_redo:
+        game.redo_snapshot = None
+        game.redo_label = None
 
 
 def undo_unit_action(game: Game, color: str, board_index: int, unit_id: str) -> None:
     ensure_turn(game, color)
-    for action in reversed(game.turn_history):
+    for action_index in range(len(game.turn_history) - 1, -1, -1):
+        action = game.turn_history[action_index]
         if action.board == board_index and unit_id in action.unit_ids and action.before is not None:
             redo_snapshot = _snapshot(game)
             redo_label = action.summary
+            subsequent = copy.deepcopy(game.turn_history[action_index + 1 :])
             _restore_snapshot(game, action.before)
+            skipped = 0
+            for later_action in subsequent:
+                if not later_action.action_name or later_action.color is None:
+                    skipped += 1
+                    continue
+                try:
+                    apply_action(game, later_action.color, later_action.action_name, later_action.payload, clear_redo=False)
+                except RuleError:
+                    skipped += 1
             game.redo_snapshot = redo_snapshot
             game.redo_label = redo_label
-            game.log.append(f"{color.title()} undid: {action.summary}.")
+            if skipped:
+                game.log.append(f"{color.title()} undid: {action.summary}. Skipped {skipped} now-illegal later operation(s).")
+            else:
+                game.log.append(f"{color.title()} undid: {action.summary}. Replayed later operations.")
             return
     raise RuleError("that unit has no operation to undo this turn")
 
@@ -347,11 +372,12 @@ def is_empty(game: Game, board: BoardState, hex_: Hex) -> bool:
 
 def is_unit_spawn_destination(game: Game, board: BoardState, hex_: Hex, stats: dict) -> bool:
     key = hex_.to_key()
-    if key in {h.to_key() for h in board.map.graveyards}:
-        return False
-    if unit_on_hex(board, key) is not None or terrain_on_hex(board, key) is not None:
+    if unit_on_hex(board, key) is not None:
         return False
     if hex_ in board.map.water and not stats["flying"]:
+        return False
+    terrain = terrain_on_hex(board, key)
+    if not terrain_allows_entry(terrain, stats):
         return False
     return True
 
@@ -485,6 +511,7 @@ def spawn_reinforcement(
     r: int,
     free: bool = False,
     via_spell: bool = False,
+    unit_id: Optional[str] = None,
 ) -> Tuple[UnitInstance, str]:
     ensure_turn(game, color)
     board = board_at(game, board_index)
@@ -504,7 +531,7 @@ def spawn_reinforcement(
             board.reinforcements[color].remove(template_id)
         except ValueError:
             raise RuleError("that unit is not in this board's reinforcements")
-    unit = UnitInstance(new_unit_id(), template_id, color, destination.to_key(), exhausted=True)
+    unit = UnitInstance(unit_id or new_unit_id(), template_id, color, destination.to_key(), exhausted=True)
     board.units[unit.id] = unit
     game.log.append(f"{color.title()} spawned {game.template(template_id).name} on board {board.index + 1}.")
     return unit, source.id
@@ -893,7 +920,7 @@ def end_turn(game: Game, color: str) -> None:
     start_turn_checks(game, game.turn)
 
 
-def apply_action(game: Game, color: str, action: str, payload: dict) -> Optional[dict]:
+def apply_action(game: Game, color: str, action: str, payload: dict, clear_redo: bool = True) -> Optional[dict]:
     if action == "join":
         join_game(game, color, payload.get("name", ""))
     elif action == "set_phase":
@@ -903,20 +930,35 @@ def apply_action(game: Game, color: str, action: str, payload: dict) -> Optional
     elif action == "research":
         before = _snapshot(game)
         unit = research_unit(game, color)
-        _record_turn_action(game, before, "research", None, f"researched {unit.name}")
+        _record_turn_action(
+            game,
+            before,
+            "research",
+            None,
+            f"researched {unit.name}",
+            color=color,
+            action_name=action,
+            payload=payload,
+            clear_redo=clear_redo,
+        )
         return {"unit": unit.to_dict()}
     elif action == "spawn":
         before = _snapshot(game)
+        board_index = int(payload.get("board", 0))
         unit, source_id = spawn_reinforcement(
             game,
             color,
-            int(payload.get("board", 0)),
+            board_index,
             payload.get("sourceId"),
             payload["templateId"],
             int(payload["q"]),
             int(payload["r"]),
+            unit_id=payload.get("_unitId"),
         )
-        board_index = int(payload.get("board", 0))
+        replay_payload = dict(payload)
+        replay_payload["board"] = board_index
+        replay_payload["sourceId"] = source_id
+        replay_payload["_unitId"] = unit.id
         _record_turn_action(
             game,
             before,
@@ -924,20 +966,24 @@ def apply_action(game: Game, color: str, action: str, payload: dict) -> Optional
             board_index,
             f"spawned {game.template(unit.template_id).name}",
             [unit.id, source_id],
+            color=color,
+            action_name=action,
+            payload=replay_payload,
+            clear_redo=clear_redo,
         )
         return {"unitId": unit.id}
     elif action == "spawn_terrain":
         before = _snapshot(game)
+        board_index = int(payload.get("board", 0))
         spawn_terrain(
             game,
             color,
-            int(payload.get("board", 0)),
+            board_index,
             payload["sourceId"],
             payload["terrain"],
             int(payload["q"]),
             int(payload["r"]),
         )
-        board_index = int(payload.get("board", 0))
         _record_turn_action(
             game,
             before,
@@ -945,12 +991,28 @@ def apply_action(game: Game, color: str, action: str, payload: dict) -> Optional
             board_index,
             f"spawned {TERRAIN_LABELS[payload['terrain']]}",
             [payload["sourceId"]],
+            color=color,
+            action_name=action,
+            payload={**payload, "board": board_index},
+            clear_redo=clear_redo,
         )
     elif action == "move":
         before = _snapshot(game)
         board_index = int(payload.get("board", 0))
         path = move_unit(game, color, board_index, payload["unitId"], int(payload["q"]), int(payload["r"]))
-        _record_turn_action(game, before, "move", board_index, "moved unit", [payload["unitId"]], path)
+        _record_turn_action(
+            game,
+            before,
+            "move",
+            board_index,
+            "moved unit",
+            [payload["unitId"]],
+            path,
+            color=color,
+            action_name=action,
+            payload={**payload, "board": board_index},
+            clear_redo=clear_redo,
+        )
         return {"path": path}
     elif action == "attack":
         before = _snapshot(game)
@@ -964,12 +1026,27 @@ def apply_action(game: Game, color: str, action: str, payload: dict) -> Optional
             board_index,
             "attacked unit",
             [payload["attackerId"], payload["targetId"]],
+            color=color,
+            action_name=action,
+            payload={**payload, "board": board_index},
+            clear_redo=clear_redo,
         )
     elif action == "blink_unit":
         before = _snapshot(game)
         board_index = int(payload.get("board", 0))
         blink_unit(game, color, board_index, payload["unitId"])
-        _record_turn_action(game, before, "blink", board_index, "blinked unit", [payload["unitId"]])
+        _record_turn_action(
+            game,
+            before,
+            "blink",
+            board_index,
+            "blinked unit",
+            [payload["unitId"]],
+            color=color,
+            action_name=action,
+            payload={**payload, "board": board_index},
+            clear_redo=clear_redo,
+        )
     elif action == "cast_spell":
         before = _snapshot(game)
         cast_spell(game, color, payload["cardId"], payload, discarded=False)
@@ -980,6 +1057,10 @@ def apply_action(game: Game, color: str, action: str, payload: dict) -> Optional
             int(payload.get("board", 0)),
             "cast spell",
             [payload["targetId"]] if payload.get("targetId") else [],
+            color=color,
+            action_name=action,
+            payload=payload,
+            clear_redo=clear_redo,
         )
     elif action == "discard_spell":
         before = _snapshot(game)
@@ -991,6 +1072,10 @@ def apply_action(game: Game, color: str, action: str, payload: dict) -> Optional
             int(payload.get("board", 0)) if "board" in payload else None,
             "discarded spell",
             [payload["targetId"]] if payload.get("targetId") else [],
+            color=color,
+            action_name=action,
+            payload=payload,
+            clear_redo=clear_redo,
         )
     elif action == "draw_spell":
         draw_spell(game, color)

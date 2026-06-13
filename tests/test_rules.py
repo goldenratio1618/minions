@@ -1,10 +1,10 @@
 import unittest
 
-from minions.rules.constants import Phase
+from minions.rules.constants import Phase, Terrain
 from minions.rules.coords import Hex, neighbors, reflect_necromancer_axis
 from minions.rules.game import apply_action, can_enter, create_game, end_turn, is_unit_spawn_destination, move_unit, research_unit, set_phase, unit_on_hex
 from minions.rules.maps import generate_map
-from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, attack_for_power, generate_random_unit, predicted_expression
+from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, UnitInstance, attack_for_power, generate_random_unit, predicted_expression
 
 
 class MapGeneratorTests(unittest.TestCase):
@@ -112,6 +112,55 @@ class GameplayTests(unittest.TestCase):
         self.assertTrue(unit.exhausted)
         self.assertEqual(unit.hex, destination.to_key())
 
+    def test_reinforcements_can_spawn_on_graveyards_and_legal_terrain(self):
+        game = create_game(board_count=1, seed=12)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        spawner = None
+        grave_destination = None
+        for candidate in board.units.values():
+            if candidate.team != "blue":
+                continue
+            destination = next((hex_ for hex_ in neighbors(Hex.from_key(candidate.hex)) if unit_on_hex(board, hex_.to_key()) is None), None)
+            if destination:
+                spawner = candidate
+                grave_destination = destination
+                break
+        self.assertIsNotNone(spawner)
+        self.assertIsNotNone(grave_destination)
+        board.map.water.discard(grave_destination)
+        board.map.graveyards.add(grave_destination)
+        result = apply_action(game, "blue", "spawn", {"board": 0, "sourceId": spawner.id, "templateId": "zombie", "q": grave_destination.q, "r": grave_destination.r})
+        self.assertEqual(board.units[result["unitId"]].hex, grave_destination.to_key())
+
+        skeleton = next(unit for unit in EXISTING_UNITS if unit.id == "skeleton")
+        game.unit_catalog[skeleton.id] = skeleton
+        board.reinforcements["blue"].append(skeleton.id)
+        terrain_spawner = None
+        terrain_destination = None
+        for candidate in board.units.values():
+            if candidate.team != "blue" or candidate.exhausted:
+                continue
+            destination = next(
+                (hex_ for hex_ in neighbors(Hex.from_key(candidate.hex)) if unit_on_hex(board, hex_.to_key()) is None and hex_ != grave_destination),
+                None,
+            )
+            if destination:
+                terrain_spawner = candidate
+                terrain_destination = destination
+                break
+        self.assertIsNotNone(terrain_spawner)
+        self.assertIsNotNone(terrain_destination)
+        board.map.water.discard(terrain_destination)
+        board.terrain[Terrain.FLOOD.value] = terrain_destination.to_key()
+        result = apply_action(
+            game,
+            "blue",
+            "spawn",
+            {"board": 0, "sourceId": terrain_spawner.id, "templateId": skeleton.id, "q": terrain_destination.q, "r": terrain_destination.r},
+        )
+        self.assertEqual(board.units[result["unitId"]].hex, terrain_destination.to_key())
+
     def test_friendly_units_are_pass_through_not_destinations(self):
         game = create_game(board_count=1, seed=13)
         board = game.boards[0]
@@ -151,6 +200,29 @@ class GameplayTests(unittest.TestCase):
         apply_action(game, "blue", "redo", {})
         redone = game.boards[0].units[unit.id]
         self.assertEqual(redone.hex, destination.to_key())
+
+    def test_undo_replays_later_legal_actions_and_skips_illegal_ones(self):
+        game = create_game(board_count=1, seed=15)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        board.units.clear()
+        board.map.water.clear()
+        unit_a = UnitInstance("a", "zombie", "blue", "5,5")
+        unit_b = UnitInstance("b", "zombie", "blue", "5,6")
+        unit_c = UnitInstance("c", "zombie", "blue", "7,7")
+        board.units = {unit.id: unit for unit in (unit_a, unit_b, unit_c)}
+
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "a", "q": 6, "r": 5})
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "b", "q": 5, "r": 5})
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "c", "q": 7, "r": 6})
+
+        apply_action(game, "blue", "undo_unit", {"board": 0, "unitId": "a"})
+
+        self.assertEqual(game.boards[0].units["a"].hex, "5,5")
+        self.assertEqual(game.boards[0].units["b"].hex, "5,6")
+        self.assertEqual(game.boards[0].units["c"].hex, "7,6")
+        self.assertEqual([action.unit_ids[0] for action in game.turn_history], ["c"])
+        self.assertTrue(game.redo_snapshot)
 
 
 if __name__ == "__main__":
