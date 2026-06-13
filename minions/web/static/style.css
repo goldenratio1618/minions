@@ -9,6 +9,7 @@
   --grave: #898071;
   --water: #7cc8d8;
   --danger: #d64f3f;
+  --hex-shape: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
 }
 
 * {
@@ -258,42 +259,63 @@ p {
   position: absolute;
   width: 80px;
   height: 70px;
-  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
-  background: #d7b87c;
+  clip-path: var(--hex-shape);
+  --hex-fill: #d7b87c;
+  --hex-border: rgba(54, 42, 30, 0.32);
+  --hex-border-width: 2px;
+  background: transparent;
   border: 0;
   color: var(--ink);
   padding: 0;
   touch-action: none;
 }
 
+.hex::before,
 .hex::after {
   content: "";
   position: absolute;
-  inset: 2px;
-  clip-path: inherit;
-  border: 1px solid rgba(54, 42, 30, 0.25);
+  clip-path: var(--hex-shape);
   pointer-events: none;
 }
 
+.hex::before {
+  inset: 0;
+  background: var(--hex-border);
+  z-index: 0;
+}
+
+.hex::after {
+  inset: var(--hex-border-width);
+  background: var(--hex-fill);
+  z-index: 1;
+}
+
+.hex > * {
+  z-index: 2;
+}
+
 .hex.water {
-  background: var(--water);
+  --hex-fill: var(--water);
 }
 
 .hex.graveyard {
-  background: var(--grave);
+  --hex-fill: var(--grave);
   color: white;
 }
 
 .hex.spawn-yellow {
-  box-shadow: inset 0 0 0 4px rgba(255, 212, 71, 0.9);
+  --hex-border: rgba(255, 212, 71, 0.95);
+  --hex-border-width: 4px;
 }
 
 .hex.spawn-blue {
-  box-shadow: inset 0 0 0 4px rgba(82, 167, 255, 0.9);
+  --hex-border: rgba(82, 167, 255, 0.95);
+  --hex-border-width: 4px;
 }
 
 .hex.selected {
-  outline: 4px solid #df5b42;
+  --hex-border: #df5b42;
+  --hex-border-width: 5px;
   z-index: 5;
 }
 
@@ -332,25 +354,49 @@ p {
 .unit-token {
   position: absolute;
   inset: 4px;
-  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
-  background: #f7f0dc;
-  border: 2px solid #2d2118;
+  clip-path: var(--hex-shape);
+  --unit-fill: #f7f0dc;
+  --unit-border: #2d2118;
+  background: transparent;
+  border: 0;
   z-index: 2;
   font-size: 0.65rem;
   line-height: 1;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.unit-token::before,
+.unit-token::after {
+  content: "";
+  position: absolute;
+  clip-path: var(--hex-shape);
+  pointer-events: none;
+}
+
+.unit-token::before {
+  inset: 0;
+  background: var(--unit-border);
+  z-index: 0;
+}
+
+.unit-token::after {
+  inset: 3px;
+  background: var(--unit-fill);
+  z-index: 1;
 }
 
 .unit-token * {
   pointer-events: none;
+  z-index: 2;
 }
 
 .unit-token.yellow {
-  background: #ffe276;
+  --unit-fill: #ffe276;
 }
 
 .unit-token.blue {
-  background: #9bd0ff;
+  --unit-fill: #9bd0ff;
 }
 
 .unit-token.exhausted {
@@ -359,18 +405,15 @@ p {
 }
 
 .unit-token.state-ready {
-  border-color: #249047;
-  box-shadow: inset 0 0 0 2px rgba(36, 144, 71, 0.45);
+  --unit-border: #249047;
 }
 
 .unit-token.state-attacked {
-  border-color: #d9861c;
-  box-shadow: inset 0 0 0 2px rgba(217, 134, 28, 0.5);
+  --unit-border: #d9861c;
 }
 
 .unit-token.state-exhausted {
-  border-color: #c52f2f;
-  box-shadow: inset 0 0 0 2px rgba(197, 47, 47, 0.55);
+  --unit-border: #c52f2f;
 }
 
 .unit-name {
@@ -549,8 +592,11 @@ p {
 }
 
 .bench-unit.active {
-  outline: 3px solid #df5b42;
-  outline-offset: 2px;
+  outline: 0;
+}
+
+.bench-unit.active .unit-token {
+  --unit-border: #df5b42;
 }
 
 .bench-unit .unit-name {
