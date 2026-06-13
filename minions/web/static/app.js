@@ -10,12 +10,12 @@ const state = {
   terrain: "firestorm",
 };
 
-const HEX_WIDTH = 64;
-const HEX_HEIGHT = 56;
+const HEX_WIDTH = 80;
+const HEX_HEIGHT = 70;
 const HEX_STEP_X = HEX_WIDTH * 0.75;
 const HEX_STEP_Y = HEX_HEIGHT * 0.5;
 const MAP_PADDING = 34;
-const MAP_ROTATION = (2 * Math.PI) / 3;
+const MAP_ROTATION = Math.PI / 2;
 
 function rotatedBoardMetrics(size = 10) {
   const points = [];
@@ -290,6 +290,17 @@ function renderSelectedUnit(unit) {
   `;
 }
 
+function findTemplate(templateId) {
+  const base = Object.values(state.game.baseUnits || {}).find((unit) => unit.id === templateId);
+  if (base) return base;
+  const researched = (team().researched || []).find((unit) => unit.id === templateId);
+  if (researched) return researched;
+  for (const candidate of board().reinforcements[state.color] || []) {
+    if (candidate.id === templateId) return candidate;
+  }
+  return null;
+}
+
 function renderMap(b) {
   const water = new Set(b.map.water);
   const graves = new Set(b.map.graveyards);
@@ -366,6 +377,19 @@ function updateHoverCard(key) {
   `;
 }
 
+function updateHoverUnitTemplate(templateId, label = "Unit") {
+  const card = $("hover-card");
+  const unit = findTemplate(templateId);
+  if (!card || !unit) return;
+  const terrain = (unit.terrainSpawn || []).map((kind) => state.game.terrainLabels[kind] || kind).join(", ");
+  card.innerHTML = `
+    <div class="hover-props"><span>${label}</span><span>$${unit.cost}/${unit.rebate}</span><span>${unit.speed} speed</span><span>${unit.range} range</span></div>
+    <div class="hover-unit-name">${unit.name}</div>
+    <div class="hover-unit-preview">${unitToken({ ...unit, team: state.color }, true)}</div>
+    <div class="hover-unit-stats">${unit.attack}/${unit.defense}${terrain ? `; spawns ${terrain}` : ""}</div>
+  `;
+}
+
 function handleHexClick(q, r, unitId) {
   const key = hexKey(q, r);
   if (state.selectedCard) {
@@ -403,6 +427,7 @@ function renderReinforcements(b) {
   return list.map((unit) => `
     <div class="mini-card">
       <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
+      <button class="bench-unit ${state.selectedTemplate === unit.id ? "active" : ""}" type="button" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onclick="state.selectedTemplate='${unit.id}'; setMode('spawn')">${unitToken({ ...unit, team: state.color })}</button>
       <div>${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
       <button class="secondary ${state.selectedTemplate === unit.id ? "active" : ""}" onclick="state.selectedTemplate='${unit.id}'; setMode('spawn')">Use for Spawn</button>
     </div>
@@ -415,6 +440,7 @@ function renderResearch() {
   return researched.map((unit) => `
     <div class="mini-card">
       <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
+      <button class="bench-unit" type="button" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onclick="action('buy', {board:${state.board}, templateId:'${unit.id}'})">${unitToken({ ...unit, team: state.color })}</button>
       <div>${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
       <button class="secondary" onclick="action('buy', {board:${state.board}, templateId:'${unit.id}'})">Buy</button>
     </div>
@@ -592,4 +618,5 @@ $("generate-unit").addEventListener("click", async () => {
 window.action = action;
 window.setMode = setMode;
 window.selectCardById = selectCardById;
+window.updateHoverUnitTemplate = updateHoverUnitTemplate;
 window.state = state;

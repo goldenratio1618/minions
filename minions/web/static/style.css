@@ -224,8 +224,8 @@ p {
 
 .hex {
   position: absolute;
-  width: 64px;
-  height: 56px;
+  width: 80px;
+  height: 70px;
   clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
   background: #d7b87c;
   border: 0;
@@ -266,23 +266,23 @@ p {
 
 .coord {
   position: absolute;
-  top: 6px;
+  top: 7px;
   left: 0;
   right: 0;
   text-align: center;
-  font-size: 0.62rem;
+  font-size: 0.76rem;
   color: rgba(36, 26, 19, 0.55);
 }
 
 .terrain-chip {
   position: absolute;
-  left: 7px;
-  right: 7px;
-  top: 21px;
+  left: 9px;
+  right: 9px;
+  top: 26px;
   border-radius: 999px;
   background: rgba(255, 250, 240, 0.86);
   color: #302217;
-  font-size: 0.6rem;
+  font-size: 0.74rem;
   font-weight: 800;
   text-align: center;
   padding: 2px 1px;
@@ -290,7 +290,7 @@ p {
 
 .grave-mark {
   position: absolute;
-  inset: 18px 0 auto;
+  inset: 23px 0 auto;
   text-align: center;
   font-weight: 900;
   letter-spacing: 0.04em;
@@ -298,12 +298,12 @@ p {
 
 .unit-token {
   position: absolute;
-  inset: 3px;
+  inset: 4px;
   clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
   background: #f7f0dc;
   border: 2px solid #2d2118;
   z-index: 2;
-  font-size: 0.52rem;
+  font-size: 0.65rem;
   line-height: 1;
   overflow: hidden;
 }
@@ -327,11 +327,11 @@ p {
 
 .unit-name {
   position: absolute;
-  top: 19px;
-  left: 15px;
-  right: 15px;
+  top: 24px;
+  left: 19px;
+  right: 19px;
   text-align: center;
-  font-size: 0.45rem;
+  font-size: 0.56rem;
   font-weight: 900;
   white-space: nowrap;
   overflow: hidden;
@@ -344,21 +344,21 @@ p {
 
 .cost-line {
   position: absolute;
-  top: 4px;
-  left: 14px;
-  right: 14px;
+  top: 5px;
+  left: 18px;
+  right: 18px;
   text-align: center;
   font-weight: 900;
 }
 
 .speed-line {
   position: absolute;
-  left: 2px;
-  top: 20px;
-  width: 17px;
+  left: 3px;
+  top: 25px;
+  width: 22px;
   text-align: center;
   font-weight: 800;
-  font-size: 0.44rem;
+  font-size: 0.55rem;
   overflow: hidden;
   display: inline-flex;
   align-items: center;
@@ -368,24 +368,24 @@ p {
 
 .ability-line {
   position: absolute;
-  right: 2px;
-  top: 18px;
-  width: 18px;
+  right: 3px;
+  top: 23px;
+  width: 23px;
   display: grid;
   gap: 1px;
   text-align: center;
-  font-size: 0.44rem;
+  font-size: 0.55rem;
   font-weight: 900;
   overflow: hidden;
 }
 
 .terrain-line {
   position: absolute;
-  left: 11px;
-  right: 11px;
-  bottom: 15px;
+  left: 14px;
+  right: 14px;
+  bottom: 19px;
   text-align: center;
-  font-size: 0.34rem;
+  font-size: 0.42rem;
   font-weight: 900;
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -395,15 +395,15 @@ p {
 
 .combat-line {
   position: absolute;
-  left: 13px;
-  right: 13px;
-  bottom: 5px;
+  left: 16px;
+  right: 16px;
+  bottom: 6px;
   display: flex;
   gap: 2px;
   justify-content: space-between;
   align-items: center;
   font-weight: 900;
-  font-size: 0.48rem;
+  font-size: 0.6rem;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -421,8 +421,8 @@ p {
 }
 
 .unit-icon {
-  width: 0.96em;
-  height: 0.96em;
+  width: 1.08em;
+  height: 1.08em;
   display: inline-block;
   flex: 0 0 auto;
   fill: currentColor;
@@ -435,8 +435,8 @@ p {
 }
 
 .speed-line .unit-icon {
-  width: 1.12em;
-  height: 1.12em;
+  width: 1.18em;
+  height: 1.18em;
 }
 
 .ability-line .unit-icon {
@@ -483,6 +483,26 @@ p {
   font-size: 0.94rem;
 }
 
+.bench-unit {
+  width: 80px;
+  height: 70px;
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.bench-unit.active {
+  outline: 3px solid #df5b42;
+  outline-offset: 2px;
+}
+
+.bench-unit .unit-name {
+  display: none;
+}
+
 .mini-actions {
   display: flex;
   flex-wrap: wrap;
@@ -497,7 +517,7 @@ p {
 }
 
 .hover-card {
-  min-height: 180px;
+  min-height: 260px;
 }
 
 .hover-props {
@@ -521,58 +541,59 @@ p {
 
 .hover-unit-preview {
   position: relative;
-  width: 170px;
-  height: 150px;
+  width: 240px;
+  height: 210px;
   margin: 8px auto;
 }
 
 .hover-unit-preview .unit-token {
   inset: 0;
-  font-size: 0.7rem;
+  font-size: 1rem;
 }
 
 .hover-unit-preview .unit-name {
   display: block;
-  top: 60px;
-  left: 39px;
-  right: 39px;
-  font-size: 0.7rem;
+  top: 63px;
+  left: 57px;
+  right: 57px;
+  font-size: 0.95rem;
 }
 
 .hover-unit-preview .cost-line {
-  top: 15px;
-  left: 45px;
-  right: 45px;
+  top: 18px;
+  left: 64px;
+  right: 64px;
+  font-size: 1.1rem;
 }
 
 .hover-unit-preview .speed-line {
-  top: 68px;
-  left: 10px;
-  width: 38px;
-  font-size: 0.6rem;
-  gap: 2px;
+  top: 98px;
+  left: 14px;
+  width: 56px;
+  font-size: 1rem;
+  gap: 3px;
 }
 
 .hover-unit-preview .ability-line {
-  top: 60px;
-  right: 8px;
-  width: 41px;
-  font-size: 0.6rem;
+  top: 88px;
+  right: 12px;
+  width: 56px;
+  font-size: 0.82rem;
 }
 
 .hover-unit-preview .terrain-line {
-  left: 31px;
-  right: 31px;
-  bottom: 42px;
-  font-size: 0.52rem;
+  left: 43px;
+  right: 43px;
+  bottom: 58px;
+  font-size: 0.8rem;
   letter-spacing: 0;
 }
 
 .hover-unit-preview .combat-line {
-  left: 36px;
-  right: 36px;
-  bottom: 17px;
-  font-size: 0.78rem;
+  left: 50px;
+  right: 50px;
+  bottom: 24px;
+  font-size: 1.2rem;
 }
 
 .hover-unit-stats,
@@ -612,59 +633,60 @@ p {
 }
 
 .unit-preview {
-  width: 260px;
-  height: 228px;
+  width: 300px;
+  height: 263px;
   position: relative;
   margin: 16px auto;
 }
 
 .unit-preview .unit-token {
   inset: 0;
-  font-size: 1.05rem;
+  font-size: 1.2rem;
 }
 
 .unit-preview .unit-name {
   display: block;
-  top: 91px;
-  left: 60px;
-  right: 60px;
-  font-size: 1.1rem;
+  top: 78px;
+  left: 72px;
+  right: 72px;
+  font-size: 1.05rem;
 }
 
 .unit-preview .cost-line {
-  top: 21px;
-  left: 70px;
-  right: 70px;
+  top: 24px;
+  left: 80px;
+  right: 80px;
+  font-size: 1.25rem;
 }
 
 .unit-preview .speed-line {
-  top: 104px;
-  left: 14px;
-  width: 58px;
-  font-size: 0.9rem;
+  top: 121px;
+  left: 18px;
+  width: 68px;
+  font-size: 1.15rem;
   gap: 4px;
 }
 
 .unit-preview .ability-line {
-  top: 91px;
-  right: 13px;
-  width: 62px;
-  font-size: 0.9rem;
+  top: 107px;
+  right: 16px;
+  width: 68px;
+  font-size: 0.95rem;
 }
 
 .unit-preview .terrain-line {
-  left: 47px;
-  right: 47px;
-  bottom: 63px;
-  font-size: 0.78rem;
+  left: 54px;
+  right: 54px;
+  bottom: 73px;
+  font-size: 0.95rem;
   letter-spacing: 0;
 }
 
 .unit-preview .combat-line {
-  left: 56px;
-  right: 56px;
-  bottom: 26px;
-  font-size: 1.2rem;
+  left: 65px;
+  right: 65px;
+  bottom: 32px;
+  font-size: 1.4rem;
 }
 
 pre {

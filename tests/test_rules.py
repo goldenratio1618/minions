@@ -1,7 +1,7 @@
 import unittest
 
 from minions.rules.constants import Phase
-from minions.rules.coords import Hex, neighbors
+from minions.rules.coords import Hex, neighbors, reflect_necromancer_axis
 from minions.rules.game import create_game, end_turn, move_unit, research_unit, set_phase
 from minions.rules.maps import generate_map
 from minions.rules.units import ALPHA, EXISTING_UNITS, attack_for_power, generate_random_unit, predicted_expression
@@ -21,6 +21,8 @@ class MapGeneratorTests(unittest.TestCase):
             self.assertTrue(board_map.graveyards_connect_to_necromancers())
             self.assertEqual(board_map.spawn_centers["yellow"].to_key(), "1,8")
             self.assertEqual(board_map.spawn_centers["blue"].to_key(), "8,1")
+            self.assertLessEqual(len(board_map.water), 10)
+            self.assertEqual(reflect_necromancer_axis(board_map.spawn_centers["yellow"]), board_map.spawn_centers["blue"])
 
 
 class UnitGeneratorTests(unittest.TestCase):
@@ -61,6 +63,8 @@ class GameplayTests(unittest.TestCase):
         game = create_game(board_count=2, seed=3)
         self.assertEqual(game.turn, "yellow")
         self.assertEqual(game.teams["blue"].souls, 8)
+        self.assertEqual(game.boards[0].reinforcements["yellow"], ["zombie"])
+        self.assertEqual(game.boards[0].reinforcements["blue"], ["zombie"])
         self.assertEqual(len(game.teams["yellow"].hand), 2)
         self.assertEqual(len(game.teams["blue"].hand), 0)
         end_turn(game, "yellow")

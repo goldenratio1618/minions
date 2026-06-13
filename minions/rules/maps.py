@@ -12,7 +12,7 @@ from .coords import (
     blue_spawn_center,
     distance,
     neighbors,
-    reflect_long_axis,
+    reflect_necromancer_axis,
     rotate_180,
     spawn_cluster,
     yellow_spawn_center,
@@ -43,7 +43,7 @@ class BoardMap:
         return blocked
 
     def is_symmetric(self) -> bool:
-        fn = rotate_180 if self.symmetry == "rotational" else reflect_long_axis
+        fn = rotate_180 if self.symmetry == "rotational" else reflect_necromancer_axis
         for collection in (self.water, self.graveyards):
             if {fn(hex_) for hex_ in collection} != collection:
                 return False
@@ -167,7 +167,7 @@ def generate_map(seed: Optional[int] = None) -> BoardMap:
     symmetry_name, symmetry = rng.choice(
         [
             ("rotational", rotate_180),
-            ("reflectional", reflect_long_axis),
+            ("reflectional", reflect_necromancer_axis),
         ]
     )
 
@@ -186,10 +186,10 @@ def generate_map(seed: Optional[int] = None) -> BoardMap:
 
     _fill_symmetric(graveyards, 10, symmetry, spawn_hexes, rng, separated=True)
 
-    water_count = rng.randrange(10, 21)
+    water_count = rng.randrange(5, 11)
     if water_count % 2 == 1:
-        water_count += 1
-    water_count = min(water_count, 20)
+        water_count += rng.choice((-1, 1))
+    water_count = min(max(water_count, 4), 10)
     water: Set[Hex] = set()
     forbidden_water = spawn_hexes | graveyards
     _fill_symmetric(water, water_count, symmetry, forbidden_water, rng)

@@ -63,6 +63,10 @@ def reflect_long_axis(hex_: Hex) -> Hex:
     return Hex(BOARD_SIZE - 1 - hex_.r, BOARD_SIZE - 1 - hex_.q)
 
 
+def reflect_necromancer_axis(hex_: Hex) -> Hex:
+    return Hex(hex_.r, hex_.q)
+
+
 def yellow_spawn_center() -> Hex:
     return Hex(1, BOARD_SIZE - 2)
 

@@ -14,9 +14,9 @@ Then open `http://127.0.0.1:8000`.
 
 The game is played by yellow and blue on a chosen number of boards. Creating a game returns a six-character code; another player can join that code and choose yellow or blue. Yellow goes first. Blue starts with `$4 * number_of_boards`.
 
-Each board is a 10 by 10 axial hex grid rendered as a diamond. A generated map has exactly ten graveyards, symmetric water, seven yellow spawn tiles, and seven blue spawn tiles. The spawn tiles are arranged as one center tile surrounded by six allied tiles near opposite long-axis corners. Spawn tiles never contain water. Graveyards are never adjacent to other graveyards. Generated maps are rotationally or reflectionally symmetric and guarantee at least two graveyards within distance 1 of turn-one spawn tiles.
+Each board is a 10 by 10 axial hex grid rendered as a diamond. A generated map has exactly ten graveyards, symmetric water, seven yellow spawn tiles, and seven blue spawn tiles. Current maps use about half the original water density, typically 4 to 10 water tiles. The spawn tiles are arranged as one center tile surrounded by six allied tiles on opposite sides of the rotated board. Spawn tiles never contain water. Graveyards are never adjacent to other graveyards, and every graveyard must have a non-water path to both starting necromancer hexes. Generated maps are either rotationally symmetric by 180 degrees or reflectionally symmetric along the axis that swaps the blue and yellow necromancer starts. At least two graveyards are within distance 1 of turn-one spawn tiles.
 
-Each board starts with one necromancer per color on the central spawn tile and six allied zombies around it.
+Each board starts with one necromancer per color on the central spawn tile and six allied zombies around it. Whenever a board starts or resets, both sides also get one free zombie in that board's reinforcements.
 
 ## Units
 

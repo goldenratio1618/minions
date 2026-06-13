@@ -171,6 +171,7 @@ def reset_board(game: Game, board: BoardState, opener: str, initial: bool = Fals
         center = board.map.spawn_centers[team]
         necro = UnitInstance(new_unit_id("nec"), "necromancer", team, center.to_key())
         board.units[necro.id] = necro
+        board.reinforcements[team].append("zombie")
         for hex_ in board.map.spawn_tiles[team]:
             if hex_ == center:
                 continue
