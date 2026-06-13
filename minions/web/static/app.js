@@ -7,6 +7,10 @@ const state = {
   selectedTemplate: null,
   selectedCard: null,
   spellTarget: null,
+  terrainSpawnSource: null,
+  drag: null,
+  pathPreview: [],
+  suppressClick: false,
   terrain: "firestorm",
 };
 
@@ -15,7 +19,15 @@ const HEX_HEIGHT = 70;
 const HEX_STEP_X = HEX_WIDTH * 0.75;
 const HEX_STEP_Y = HEX_HEIGHT * 0.5;
 const MAP_PADDING = 34;
-const MAP_ROTATION = (5 * Math.PI) / 6;
+const MAP_ROTATION = (2 * Math.PI) / 3;
+const HEX_DIRECTIONS = [
+  [1, 0],
+  [1, -1],
+  [0, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, 1],
+];
 
 function rotatedBoardMetrics(size = 10) {
   const points = [];
@@ -64,6 +76,7 @@ async function action(actionName, payload = {}) {
       body: JSON.stringify({ color: state.color, action: actionName, payload }),
     });
     state.game = data.game;
+    state.pathPreview = data.result && data.result.path ? data.result.path : [];
     renderGame();
     notice("Done.", true);
   } catch (err) {
@@ -134,6 +147,13 @@ function speedIcon(unit) {
 function unitToken(unit, preview = false) {
   const tpl = unit.template || unit;
   const stats = unit.stats || unit;
+  const statusClass = unit.id
+    ? unit.exhausted
+      ? "state-exhausted"
+      : unit.attacked
+        ? "state-attacked"
+        : "state-ready"
+    : "";
   const attack = stats.attack !== undefined ? stats.attack : tpl.attack;
   const atk = stats.flurry
     ? `<span class="stat-value">${attack}</span>${attackIcon(stats.range)}${attackIcon(stats.range, "mirror")}`
@@ -147,7 +167,7 @@ function unitToken(unit, preview = false) {
   ].filter(Boolean).join("");
   const terrain = (stats.terrainSpawn || tpl.terrainSpawn || []).map((kind) => kind.slice(0, 4).toUpperCase()).join(" ");
   return `
-    <div class="unit-token ${preview ? "preview-token" : ""} ${unit.team || "yellow"} ${unit.exhausted ? "exhausted" : ""}">
+    <div class="unit-token ${preview ? "preview-token" : ""} ${unit.team || "yellow"} ${unit.exhausted ? "exhausted" : ""} ${statusClass}">
       <div class="cost-line">$${tpl.cost}/${tpl.rebate}</div>
       <div class="unit-name">${tpl.name}</div>
       <div class="speed-line">${stats.speed} ${speedIcon({ stats })}</div>
@@ -207,7 +227,6 @@ function renderGame() {
         <span class="status-pill">Code ${state.game.code}</span>
         <span class="status-pill">You ${state.color}</span>
         <span class="status-pill">Turn ${state.game.turn}</span>
-        <span class="status-pill">${state.game.phase} phase</span>
         <span class="status-pill">Score Y ${state.game.scores.yellow} / B ${state.game.scores.blue}</span>
       </div>
       <div>
@@ -222,16 +241,12 @@ function renderGame() {
           ${state.game.boards.map((b, idx) => `<button class="secondary ${idx === state.board ? "active" : ""}" data-board="${idx}">Board ${idx + 1}</button>`).join("")}
         </div>
         <div class="action-bar">
-          <button ${!active ? "disabled" : ""} onclick="action('set_phase', {phase:'movement'})">Movement Phase</button>
-          <button class="${state.mode === "select" ? "active" : ""}" onclick="setMode('select')">Select</button>
-          <button class="${state.mode === "move" ? "active" : ""}" onclick="setMode('move')">Move</button>
-          <button class="${state.mode === "attack" ? "active" : ""}" onclick="setMode('attack')">Attack</button>
-          <button class="${state.mode === "spawn" ? "active" : ""}" onclick="setMode('spawn')">Spawn Unit</button>
-          <button class="${state.mode === "terrain" ? "active" : ""}" onclick="setMode('terrain')">Spawn Terrain</button>
           <select id="terrain-select">
             ${Object.entries(state.game.terrainLabels).map(([kind, label]) => `<option value="${kind}" ${kind === state.terrain ? "selected" : ""}>${label}</option>`).join("")}
           </select>
-          <button onclick="action('end_turn')">End Turn</button>
+          <button ${!active || !state.game.canRedo ? "disabled" : ""} onclick="action('redo')">Redo</button>
+          <button ${!active ? "disabled" : ""} onclick="action('end_turn')">End Turn</button>
+          <span class="action-hint">Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation.</span>
         </div>
         <div class="map-wrap"><div class="hex-map">${renderMap(currentBoard)}</div></div>
       </div>
@@ -261,6 +276,10 @@ function renderGame() {
           <div class="compact-list">${renderHand()}</div>
         </section>
         <section class="side-section">
+          <h3>Turn Actions</h3>
+          <div class="compact-list">${renderTurnHistory()}</div>
+        </section>
+        <section class="side-section">
           <h3>Log</h3>
           <div class="log">${state.game.log.slice().reverse().map((line) => `<div>${line}</div>`).join("")}</div>
         </section>
@@ -271,8 +290,12 @@ function renderGame() {
     button.addEventListener("click", () => {
       state.board = Number(button.dataset.board);
       state.selectedUnit = null;
+      state.pathPreview = [];
       renderGame();
     });
+  });
+  document.querySelectorAll(".bench-unit[data-template]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => handleBenchPointerDown(event, button.dataset.template));
   });
   const terrainSelect = $("terrain-select");
   if (terrainSelect) terrainSelect.addEventListener("change", (event) => (state.terrain = event.target.value));
@@ -333,14 +356,48 @@ function renderMap(b) {
       `;
     }
   }
+  html += renderPathOverlay();
   setTimeout(() => {
     document.querySelectorAll(".hex").forEach((hex) => {
       hex.addEventListener("click", () => handleHexClick(Number(hex.dataset.q), Number(hex.dataset.r), hex.dataset.unit || null));
+      hex.addEventListener("dblclick", () => handleHexDoubleClick(Number(hex.dataset.q), Number(hex.dataset.r), hex.dataset.unit || null));
+      hex.addEventListener("contextmenu", (event) => handleHexContextMenu(event, hex.dataset.unit || null));
+      hex.addEventListener("pointerdown", (event) => handleHexPointerDown(event, Number(hex.dataset.q), Number(hex.dataset.r), hex.dataset.unit || null));
       hex.addEventListener("mouseenter", () => updateHoverCard(hex.dataset.key));
       hex.addEventListener("focus", () => updateHoverCard(hex.dataset.key));
     });
   }, 0);
   return `<div class="hex-map-inner" style="width:${BOARD_METRICS.width}px; height:${BOARD_METRICS.height}px">${html}</div>`;
+}
+
+function renderPathOverlay() {
+  const paths = (state.game.turnHistory || [])
+    .filter((entry) => entry.board === state.board && entry.kind === "move" && entry.path && entry.path.length > 1)
+    .map((entry) => entry.path);
+  const lines = paths.map((path) => pathSvg(path, "path-history")).join("");
+  const preview = state.pathPreview && state.pathPreview.length > 1 ? pathSvg(state.pathPreview, "path-preview") : "";
+  return `<svg id="path-overlay" class="path-overlay" width="${BOARD_METRICS.width}" height="${BOARD_METRICS.height}" viewBox="0 0 ${BOARD_METRICS.width} ${BOARD_METRICS.height}">${lines}${preview}</svg>`;
+}
+
+function pathSvg(path, cls) {
+  const points = path
+    .map((key) => {
+      const { q, r } = parseHex(key);
+      const { x, y } = hexPosition(q, r);
+      return `${x + HEX_WIDTH / 2},${y + HEX_HEIGHT / 2}`;
+    })
+    .join(" ");
+  return `<polyline class="${cls}" points="${points}"></polyline>`;
+}
+
+function drawPathPreview(path) {
+  state.pathPreview = path || [];
+  const overlay = $("path-overlay");
+  if (!overlay) return;
+  overlay.querySelectorAll(".path-preview").forEach((line) => line.remove());
+  if (state.pathPreview.length > 1) {
+    overlay.insertAdjacentHTML("beforeend", pathSvg(state.pathPreview, "path-preview"));
+  }
 }
 
 function boardLookups(b) {
@@ -353,6 +410,62 @@ function boardLookups(b) {
   const spawnByHex = {};
   Object.entries(b.map.spawnTiles).forEach(([team, keys]) => keys.forEach((key) => (spawnByHex[key] = team)));
   return { water, graves, terrainByHex, spawnByHex };
+}
+
+function inBounds(q, r) {
+  const size = board().map.size;
+  return q >= 0 && q < size && r >= 0 && r < size;
+}
+
+function hexNeighbors(key) {
+  const { q, r } = parseHex(key);
+  return HEX_DIRECTIONS.map(([dq, dr]) => ({ q: q + dq, r: r + dr }))
+    .filter((hex) => inBounds(hex.q, hex.r))
+    .map((hex) => hexKey(hex.q, hex.r));
+}
+
+function terrainAllowsEntry(kind, stats) {
+  if (!kind) return true;
+  if (kind === "firestorm") return stats.defense >= 4;
+  if (kind === "earthquake") return stats.speed >= 2;
+  if (kind === "flood") return stats.flying;
+  if (kind === "whirlwind") return stats.persistent;
+  return true;
+}
+
+function canEnterForMove(unit, key, final) {
+  const b = board();
+  const { water, terrainByHex } = boardLookups(b);
+  const stats = unit.stats;
+  if (water.has(key) && !stats.flying) return false;
+  if (!terrainAllowsEntry(terrainByHex[key], stats)) return false;
+  const occupant = unitAt(key);
+  if (!occupant || occupant.id === unit.id) return true;
+  if (final) return false;
+  if (occupant.team === unit.team) return true;
+  return Boolean(stats.flying);
+}
+
+function findClientPath(unit, destinationKey) {
+  if (!unit || destinationKey === unit.hex) return [unit ? unit.hex : destinationKey];
+  const maxSteps = unit.movementRemaining === null || unit.movementRemaining === undefined ? unit.stats.speed : unit.movementRemaining;
+  if (maxSteps <= 0) return [];
+  const queue = [[unit.hex, [unit.hex]]];
+  const seen = new Set([unit.hex]);
+  while (queue.length) {
+    const [key, path] = queue.shift();
+    if (path.length - 1 >= maxSteps) continue;
+    for (const next of hexNeighbors(key)) {
+      if (seen.has(next)) continue;
+      const final = next === destinationKey;
+      if (!canEnterForMove(unit, next, final)) continue;
+      const nextPath = [...path, next];
+      if (final) return nextPath;
+      seen.add(next);
+      queue.push([next, nextPath]);
+    }
+  }
+  return [];
 }
 
 function updateHoverCard(key) {
@@ -391,25 +504,21 @@ function updateHoverUnitTemplate(templateId, label = "Unit") {
 }
 
 function handleHexClick(q, r, unitId) {
+  if (state.suppressClick) return;
   const key = hexKey(q, r);
   if (state.selectedCard) {
     handleSpellClick(q, r, unitId);
     return;
   }
-  if (unitId && state.mode === "attack" && state.selectedUnit && unitId !== state.selectedUnit) {
-    action("attack", { board: state.board, attackerId: state.selectedUnit, targetId: unitId });
-    return;
-  }
-  if (state.mode === "move" && state.selectedUnit) {
-    action("move", { board: state.board, unitId: state.selectedUnit, q, r });
-    return;
-  }
-  if (state.mode === "spawn" && state.selectedUnit && state.selectedTemplate) {
-    action("spawn", { board: state.board, sourceId: state.selectedUnit, templateId: state.selectedTemplate, q, r });
-    return;
-  }
-  if (state.mode === "terrain" && state.selectedUnit) {
-    action("spawn_terrain", { board: state.board, sourceId: state.selectedUnit, terrain: state.terrain, q, r });
+  if (state.terrainSpawnSource) {
+    action("spawn_terrain", {
+      board: state.board,
+      sourceId: state.terrainSpawnSource.unitId,
+      terrain: state.terrainSpawnSource.terrain,
+      q,
+      r,
+    });
+    state.terrainSpawnSource = null;
     return;
   }
   if (unitId) {
@@ -421,15 +530,132 @@ function handleHexClick(q, r, unitId) {
   }
 }
 
+function handleHexDoubleClick(q, r, unitId) {
+  if (!unitId || state.game.turn !== state.color) return;
+  const unit = unitById(unitId);
+  if (!unit || unit.team !== state.color) return;
+  const terrains = unit.stats.terrainSpawn || unit.template.terrainSpawn || [];
+  if (!terrains.length) return;
+  let terrain = terrains[0];
+  if (terrains.length > 1) {
+    const choices = terrains.map((kind) => state.game.terrainLabels[kind] || kind).join(", ");
+    const answer = window.prompt(`Choose terrain to spawn: ${choices}`, state.game.terrainLabels[terrain] || terrain);
+    if (!answer) return;
+    const normalized = answer.trim().toLowerCase();
+    terrain = terrains.find((kind) => kind === normalized || (state.game.terrainLabels[kind] || "").toLowerCase() === normalized);
+    if (!terrain) {
+      notice("That terrain is not available to this unit.");
+      return;
+    }
+  }
+  state.terrainSpawnSource = { unitId, terrain };
+  state.selectedUnit = unitId;
+  notice(`Select an adjacent empty hex for ${state.game.terrainLabels[terrain]}.`, true);
+}
+
+function handleHexContextMenu(event, unitId) {
+  if (!unitId || state.game.turn !== state.color) return;
+  const unit = unitById(unitId);
+  if (!unit || unit.team !== state.color) return;
+  event.preventDefault();
+  action("undo_unit", { board: state.board, unitId });
+}
+
+function handleHexPointerDown(event, q, r, unitId) {
+  if (event.button !== 0 || !unitId || state.game.turn !== state.color || state.selectedCard) return;
+  const unit = unitById(unitId);
+  if (!unit || unit.team !== state.color) return;
+  state.drag = {
+    kind: "unit",
+    unitId,
+    startKey: hexKey(q, r),
+    lastKey: hexKey(q, r),
+  };
+  state.selectedUnit = unitId;
+  drawPathPreview([unit.hex]);
+  event.preventDefault();
+}
+
+function handleBenchPointerDown(event, templateId) {
+  if (event.button !== 0 || state.game.turn !== state.color || state.selectedCard) return;
+  state.drag = {
+    kind: "reinforcement",
+    templateId,
+    startKey: null,
+    lastKey: null,
+  };
+  state.selectedTemplate = templateId;
+  event.preventDefault();
+}
+
+function hexElementUnderPointer(event) {
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+  return element ? element.closest(".hex") : null;
+}
+
+function handlePointerMove(event) {
+  if (!state.drag || !state.game) return;
+  const hex = hexElementUnderPointer(event);
+  if (!hex) {
+    drawPathPreview([]);
+    return;
+  }
+  const key = hex.dataset.key;
+  state.drag.lastKey = key;
+  if (state.drag.kind === "unit") {
+    const unit = unitById(state.drag.unitId);
+    const occupant = unitAt(key);
+    if (unit && (!occupant || occupant.id === unit.id)) {
+      drawPathPreview(findClientPath(unit, key));
+    } else {
+      drawPathPreview([]);
+    }
+  }
+}
+
+function handlePointerUp(event) {
+  if (!state.drag || !state.game) return;
+  const drag = state.drag;
+  state.drag = null;
+  const hex = hexElementUnderPointer(event);
+  drawPathPreview([]);
+  if (!hex) return;
+  const q = Number(hex.dataset.q);
+  const r = Number(hex.dataset.r);
+  const unitId = hex.dataset.unit || null;
+  if (drag.kind === "unit") {
+    const unit = unitById(drag.unitId);
+    if (!unit) return;
+    if (unitId && unitId !== drag.unitId) {
+      const target = unitById(unitId);
+      if (target && target.team !== unit.team) {
+        state.suppressClick = true;
+        action("attack", { board: state.board, attackerId: drag.unitId, targetId: unitId });
+      }
+    } else if (hex.dataset.key !== drag.startKey) {
+      state.suppressClick = true;
+      action("move", { board: state.board, unitId: drag.unitId, q, r });
+    }
+  } else if (drag.kind === "reinforcement") {
+    state.suppressClick = true;
+    action("spawn", { board: state.board, templateId: drag.templateId, q, r });
+  }
+  if (state.suppressClick) {
+    setTimeout(() => {
+      state.suppressClick = false;
+    }, 0);
+  }
+}
+
 function renderReinforcements(b) {
   const list = b.reinforcements[state.color] || [];
   if (!list.length) return '<div class="mini-card">No reinforcements on this board.</div>';
   return list.map((unit) => `
     <div class="mini-card">
       <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
-      <button class="bench-unit ${state.selectedTemplate === unit.id ? "active" : ""}" type="button" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onclick="state.selectedTemplate='${unit.id}'; setMode('spawn')">${unitToken({ ...unit, team: state.color })}</button>
+      <button class="bench-unit ${state.selectedTemplate === unit.id ? "active" : ""}" type="button" data-template="${unit.id}" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onclick="state.selectedTemplate='${unit.id}'">${unitToken({ ...unit, team: state.color })}</button>
       <div>${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
-      <button class="secondary ${state.selectedTemplate === unit.id ? "active" : ""}" onclick="state.selectedTemplate='${unit.id}'; setMode('spawn')">Use for Spawn</button>
+      <div class="muted">Drag onto a legal adjacent spawn hex.</div>
     </div>
   `).join("");
 }
@@ -458,6 +684,18 @@ function renderHand() {
         <button class="secondary ${state.selectedCard && state.selectedCard.cardId === card.cardId ? "active" : ""}" onclick="selectCardById('${card.cardId}', false)">Cast</button>
         <button class="secondary" onclick="selectCardById('${card.cardId}', true)">Discard</button>
       </div>
+    </div>
+  `).join("");
+}
+
+function renderTurnHistory() {
+  const history = (state.game.turnHistory || []).filter((entry) => entry.board === null || entry.board === state.board);
+  if (!history.length) return '<div class="mini-card">No operations recorded this turn.</div>';
+  return history.map((entry) => `
+    <div class="mini-card turn-action">
+      <strong>${entry.sequence}. ${entry.kind}</strong>
+      <div>${entry.summary}</div>
+      ${entry.path && entry.path.length > 1 ? `<div class="muted">${entry.path.join(" → ")}</div>` : ""}
     </div>
   `).join("");
 }
@@ -555,6 +793,9 @@ document.querySelectorAll(".tab").forEach((tab) => {
     $(`${tab.dataset.view}-view`).classList.add("active");
   });
 });
+
+document.addEventListener("pointermove", handlePointerMove);
+document.addEventListener("pointerup", handlePointerUp);
 
 $("color-input").value = state.color;
 $("color-input").addEventListener("change", (event) => {
