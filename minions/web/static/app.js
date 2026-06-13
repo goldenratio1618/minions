@@ -9,6 +9,7 @@ const state = {
   spellTarget: null,
   terrainSpawnSource: null,
   drag: null,
+  dragGhost: null,
   pathPreview: [],
   suppressClick: false,
   terrain: "firestorm",
@@ -259,7 +260,7 @@ function renderGame() {
           <h3>Hover</h3>
           <div id="hover-card" class="hover-card mini-card">Hover a tile to inspect it.</div>
         </section>
-        <section class="side-section">
+        <section class="side-section" data-drop-zone="reinforcements">
           <h3>Reinforcements</h3>
           <div class="compact-list">${renderReinforcements(currentBoard)}</div>
         </section>
@@ -573,6 +574,7 @@ function handleHexPointerDown(event, q, r, unitId) {
   };
   state.selectedUnit = unitId;
   drawPathPreview([unit.hex]);
+  createDragGhost(unitToken(unit), event.clientX, event.clientY);
   event.preventDefault();
 }
 
@@ -585,6 +587,8 @@ function handleBenchPointerDown(event, templateId) {
     lastKey: null,
   };
   state.selectedTemplate = templateId;
+  const template = findTemplate(templateId);
+  if (template) createDragGhost(unitToken({ ...template, team: state.color }), event.clientX, event.clientY);
   event.preventDefault();
 }
 
@@ -593,8 +597,37 @@ function hexElementUnderPointer(event) {
   return element ? element.closest(".hex") : null;
 }
 
+function dropZoneUnderPointer(event) {
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+  return element ? element.closest("[data-drop-zone]") : null;
+}
+
+function createDragGhost(html, clientX, clientY) {
+  removeDragGhost();
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  ghost.innerHTML = html;
+  document.body.appendChild(ghost);
+  state.dragGhost = ghost;
+  moveDragGhost(clientX, clientY);
+}
+
+function moveDragGhost(clientX, clientY) {
+  if (!state.dragGhost) return;
+  state.dragGhost.style.left = `${clientX}px`;
+  state.dragGhost.style.top = `${clientY}px`;
+}
+
+function removeDragGhost() {
+  if (state.dragGhost) {
+    state.dragGhost.remove();
+    state.dragGhost = null;
+  }
+}
+
 function handlePointerMove(event) {
   if (!state.drag || !state.game) return;
+  moveDragGhost(event.clientX, event.clientY);
   const hex = hexElementUnderPointer(event);
   if (!hex) {
     drawPathPreview([]);
@@ -617,15 +650,29 @@ function handlePointerUp(event) {
   if (!state.drag || !state.game) return;
   const drag = state.drag;
   state.drag = null;
+  const dropZone = dropZoneUnderPointer(event);
   const hex = hexElementUnderPointer(event);
+  removeDragGhost();
   drawPathPreview([]);
-  if (!hex) return;
-  const q = Number(hex.dataset.q);
-  const r = Number(hex.dataset.r);
-  const unitId = hex.dataset.unit || null;
   if (drag.kind === "unit") {
     const unit = unitById(drag.unitId);
     if (!unit) return;
+    if (dropZone && dropZone.dataset.dropZone === "reinforcements") {
+      state.suppressClick = true;
+      if (unit.stats.blink) {
+        action("blink_unit", { board: state.board, unitId: drag.unitId });
+      } else {
+        notice("Only units with Blink can be dragged back to reinforcements.");
+      }
+      setTimeout(() => {
+        state.suppressClick = false;
+      }, 0);
+      return;
+    }
+    if (!hex) return;
+    const q = Number(hex.dataset.q);
+    const r = Number(hex.dataset.r);
+    const unitId = hex.dataset.unit || null;
     if (unitId && unitId !== drag.unitId) {
       const target = unitById(unitId);
       if (target && target.team !== unit.team) {
@@ -637,6 +684,9 @@ function handlePointerUp(event) {
       action("move", { board: state.board, unitId: drag.unitId, q, r });
     }
   } else if (drag.kind === "reinforcement") {
+    if (!hex) return;
+    const q = Number(hex.dataset.q);
+    const r = Number(hex.dataset.r);
     state.suppressClick = true;
     action("spawn", { board: state.board, templateId: drag.templateId, q, r });
   }

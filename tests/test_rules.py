@@ -80,6 +80,15 @@ class GameplayTests(unittest.TestCase):
         unit = research_unit(game, "yellow")
         self.assertIn(unit.id, game.teams["yellow"].researched)
 
+    def test_purchased_researched_unit_is_consumed(self):
+        game = create_game(board_count=1, seed=4)
+        game.teams["yellow"].souls = 10
+        unit = research_unit(game, "yellow")
+        game.teams["yellow"].souls = 10
+        apply_action(game, "yellow", "buy", {"board": 0, "templateId": unit.id})
+        self.assertNotIn(unit.id, game.teams["yellow"].researched)
+        self.assertIn(unit.id, game.boards[0].reinforcements["yellow"])
+
     def test_movement_is_adjacent(self):
         game = create_game(board_count=1, seed=8)
         board = game.boards[0]
@@ -161,6 +170,18 @@ class GameplayTests(unittest.TestCase):
         )
         self.assertEqual(board.units[result["unitId"]].hex, terrain_destination.to_key())
 
+    def test_terrain_spawn_does_not_require_spawn_keyword(self):
+        game = create_game(board_count=1, seed=16)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        board.units.clear()
+        board.map.water.clear()
+        ghost = next(unit for unit in EXISTING_UNITS if unit.id == "ghost")
+        game.unit_catalog[ghost.id] = ghost
+        board.units["ghost"] = UnitInstance("ghost", ghost.id, "blue", "5,5")
+        apply_action(game, "blue", "spawn_terrain", {"board": 0, "sourceId": "ghost", "terrain": Terrain.FLOOD.value, "q": 6, "r": 5})
+        self.assertEqual(board.terrain[Terrain.FLOOD.value], "6,5")
+
     def test_friendly_units_are_pass_through_not_destinations(self):
         game = create_game(board_count=1, seed=13)
         board = game.boards[0]
@@ -223,6 +244,37 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(game.boards[0].units["c"].hex, "7,6")
         self.assertEqual([action.unit_ids[0] for action in game.turn_history], ["c"])
         self.assertTrue(game.redo_snapshot)
+
+    def test_moving_last_unit_spawner_undoes_dependent_spawn(self):
+        game = create_game(board_count=1, seed=17)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        board.units.clear()
+        board.map.water.clear()
+        board.reinforcements["blue"] = ["zombie"]
+        board.units["spawner"] = UnitInstance("spawner", "zombie", "blue", "5,5")
+        result = apply_action(game, "blue", "spawn", {"board": 0, "sourceId": "spawner", "templateId": "zombie", "q": 6, "r": 5})
+        spawned_id = result["unitId"]
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "spawner", "q": 4, "r": 5})
+        current_board = game.boards[0]
+        self.assertNotIn(spawned_id, current_board.units)
+        self.assertEqual(current_board.units["spawner"].hex, "4,5")
+        self.assertEqual(current_board.reinforcements["blue"], ["zombie"])
+
+    def test_moving_last_terrain_spawner_undoes_dependent_terrain(self):
+        game = create_game(board_count=1, seed=18)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        board.units.clear()
+        board.map.water.clear()
+        ghost = next(unit for unit in EXISTING_UNITS if unit.id == "ghost")
+        game.unit_catalog[ghost.id] = ghost
+        board.units["ghost"] = UnitInstance("ghost", ghost.id, "blue", "5,5")
+        apply_action(game, "blue", "spawn_terrain", {"board": 0, "sourceId": "ghost", "terrain": Terrain.FLOOD.value, "q": 6, "r": 5})
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "ghost", "q": 4, "r": 5})
+        current_board = game.boards[0]
+        self.assertIsNone(current_board.terrain[Terrain.FLOOD.value])
+        self.assertEqual(current_board.units["ghost"].hex, "4,5")
 
 
 if __name__ == "__main__":

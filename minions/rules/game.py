@@ -95,6 +95,15 @@ class BoardState:
     def to_dict(self, game: "Game") -> dict:
         terrain_map = {kind: hex_key for kind, hex_key in self.terrain.items()}
         self.map.terrain = {kind: (Hex.from_key(hex_key) if hex_key else None) for kind, hex_key in terrain_map.items()}
+        spawned_units = []
+        spawned_terrain = []
+        for action in game.turn_history:
+            if action.board != self.index:
+                continue
+            if action.kind == "spawn" and action.unit_ids:
+                spawned_units.append(action.unit_ids[0])
+            if action.kind == "terrain" and action.payload.get("terrain"):
+                spawned_terrain.append(action.payload["terrain"])
         return {
             "index": self.index,
             "map": self.map.to_dict(),
@@ -108,6 +117,8 @@ class BoardState:
             "lastMoverId": self.last_mover_id,
             "resignedBy": self.resigned_by,
             "winner": self.winner,
+            "newlySpawnedUnits": spawned_units,
+            "newlySpawnedTerrain": spawned_terrain,
         }
 
 
@@ -261,17 +272,8 @@ def undo_unit_action(game: Game, color: str, board_index: int, unit_id: str) -> 
         if action.board == board_index and unit_id in action.unit_ids and action.before is not None:
             redo_snapshot = _snapshot(game)
             redo_label = action.summary
-            subsequent = copy.deepcopy(game.turn_history[action_index + 1 :])
-            _restore_snapshot(game, action.before)
-            skipped = 0
-            for later_action in subsequent:
-                if not later_action.action_name or later_action.color is None:
-                    skipped += 1
-                    continue
-                try:
-                    apply_action(game, later_action.color, later_action.action_name, later_action.payload, clear_redo=False)
-                except RuleError:
-                    skipped += 1
+            skipped = _replay_without_turn_action(game, action_index)
+            _prune_unsupported_spawn_dependencies(game, color)
             game.redo_snapshot = redo_snapshot
             game.redo_label = redo_label
             if skipped:
@@ -292,6 +294,110 @@ def redo_turn_action(game: Game, color: str) -> None:
     game.redo_snapshot = None
     game.redo_label = None
     game.log.append(f"{color.title()} redid: {label or 'last undo'}.")
+
+
+def _replay_without_turn_action(game: Game, action_index: int) -> int:
+    target = game.turn_history[action_index]
+    subsequent = copy.deepcopy(game.turn_history[action_index + 1 :])
+    _restore_snapshot(game, target.before)
+    skipped = 0
+    for later_action in subsequent:
+        if not later_action.action_name or later_action.color is None:
+            skipped += 1
+            continue
+        try:
+            apply_action(game, later_action.color, later_action.action_name, later_action.payload, clear_redo=False)
+        except RuleError:
+            skipped += 1
+    return skipped
+
+
+def _unit_can_support_unit_spawn(game: Game, board: BoardState, unit: UnitInstance) -> bool:
+    return unit.team == game.turn and not unit.exhausted and game.unit_stats(unit)["spawn"]
+
+
+def _unit_can_support_terrain_spawn(game: Game, board: BoardState, unit: UnitInstance, terrain: str) -> bool:
+    return unit.team == game.turn and not unit.exhausted and terrain in game.unit_stats(unit)["terrainSpawn"]
+
+
+def _has_adjacent_support(
+    game: Game,
+    board: BoardState,
+    hex_key: str,
+    predicate,
+) -> bool:
+    target = Hex.from_key(hex_key)
+    for unit in board.units.values():
+        if target in neighbors(Hex.from_key(unit.hex)) and predicate(unit):
+            return True
+    return False
+
+
+def _find_unsupported_spawn_dependency(game: Game, move_action: TurnAction) -> Optional[int]:
+    if move_action.kind != "move" or not move_action.unit_ids or move_action.before is None or move_action.board is None:
+        return None
+    board_index = move_action.board
+    moved_unit_id = move_action.unit_ids[0]
+    before_boards: List[BoardState] = move_action.before["boards"]
+    if board_index >= len(before_boards):
+        return None
+    before_board = before_boards[board_index]
+    moved_before = before_board.units.get(moved_unit_id)
+    if moved_before is None:
+        return None
+    before_stats = effective_stats(game.template(moved_before.template_id), moved_before.effects)
+    before_hex = Hex.from_key(moved_before.hex)
+    current_board = board_at(game, board_index)
+    terrain_spawn = set(before_stats["terrainSpawn"])
+    for index, action in enumerate(game.turn_history):
+        if action.sequence >= move_action.sequence or action.board != board_index:
+            continue
+        if action.kind == "spawn" and before_stats["spawn"] and action.unit_ids:
+            spawned_unit = current_board.units.get(action.unit_ids[0])
+            if spawned_unit is None:
+                continue
+            spawned_hex = Hex.from_key(spawned_unit.hex)
+            if spawned_hex not in neighbors(before_hex):
+                continue
+            if not _has_adjacent_support(game, current_board, spawned_unit.hex, lambda unit: _unit_can_support_unit_spawn(game, current_board, unit)):
+                return index
+        if action.kind == "terrain":
+            terrain = action.payload.get("terrain")
+            q = action.payload.get("q")
+            r = action.payload.get("r")
+            if not terrain or terrain not in terrain_spawn or q is None or r is None:
+                continue
+            terrain_hex = current_board.terrain.get(terrain)
+            if terrain_hex != f"{q},{r}":
+                continue
+            if Hex.from_key(terrain_hex) not in neighbors(before_hex):
+                continue
+            if not _has_adjacent_support(
+                game,
+                current_board,
+                terrain_hex,
+                lambda unit, terrain=terrain: _unit_can_support_terrain_spawn(game, current_board, unit, terrain),
+            ):
+                return index
+    return None
+
+
+def _prune_unsupported_spawn_dependencies(game: Game, color: str) -> None:
+    pruned = 0
+    while True:
+        move_action = next((action for action in reversed(game.turn_history) if action.kind == "move"), None)
+        if move_action is None:
+            break
+        unsupported_index = _find_unsupported_spawn_dependency(game, move_action)
+        if unsupported_index is None:
+            break
+        summary = game.turn_history[unsupported_index].summary
+        skipped = _replay_without_turn_action(game, unsupported_index)
+        pruned += 1 + skipped
+        game.log.append(f"{color.title()} movement invalidated {summary}; replay skipped {skipped} later operation(s).")
+    if pruned:
+        game.redo_snapshot = None
+        game.redo_label = None
 
 
 def reset_board(game: Game, board: BoardState, opener: str, initial: bool = False) -> None:
@@ -456,6 +562,8 @@ def buy_reinforcement(game: Game, color: str, board_index: int, template_id: str
         raise RuleError("not enough souls")
     game.teams[color].souls -= template.cost
     board.reinforcements[color].append(template.id)
+    if template.id != "zombie":
+        game.teams[color].researched.pop(template.id, None)
     game.log.append(f"{color.title()} bought {template.name} for board {board.index + 1}.")
 
 
@@ -546,7 +654,7 @@ def spawn_terrain(game: Game, color: str, board_index: int, source_id: str, terr
     if source.team != color:
         raise RuleError("terrain must be spawned by a friendly unit")
     if not via_spell:
-        _spawner_is_ready(game, board, source)
+        _spawner_is_ready(game, board, source, require_spawn=False)
         if terrain not in game.template(source.template_id).terrain_spawn:
             raise RuleError("that unit cannot spawn this terrain")
     else:
@@ -1013,6 +1121,8 @@ def apply_action(game: Game, color: str, action: str, payload: dict, clear_redo:
             payload={**payload, "board": board_index},
             clear_redo=clear_redo,
         )
+        if clear_redo:
+            _prune_unsupported_spawn_dependencies(game, color)
         return {"path": path}
     elif action == "attack":
         before = _snapshot(game)

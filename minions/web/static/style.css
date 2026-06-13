@@ -603,6 +603,20 @@ p {
   display: none;
 }
 
+.drag-ghost {
+  position: fixed;
+  width: 80px;
+  height: 70px;
+  z-index: 10000;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.05);
+  filter: drop-shadow(0 10px 14px rgba(36, 26, 19, 0.35));
+}
+
+.drag-ghost .unit-token {
+  inset: 0;
+}
+
 .mini-actions {
   display: flex;
   flex-wrap: wrap;
@@ -626,7 +640,8 @@ p {
 }
 
 .hover-card {
-  min-height: 260px;
+  height: 252px;
+  overflow: auto;
 }
 
 .hover-props {
@@ -650,59 +665,59 @@ p {
 
 .hover-unit-preview {
   position: relative;
-  width: 240px;
-  height: 210px;
-  margin: 8px auto;
+  width: 190px;
+  height: 166px;
+  margin: 6px auto;
 }
 
 .hover-unit-preview .unit-token {
   inset: 0;
-  font-size: 1rem;
+  font-size: 0.82rem;
 }
 
 .hover-unit-preview .unit-name {
   display: block;
-  top: 63px;
-  left: 57px;
-  right: 57px;
-  font-size: 0.95rem;
+  top: 50px;
+  left: 45px;
+  right: 45px;
+  font-size: 0.78rem;
 }
 
 .hover-unit-preview .cost-line {
-  top: 18px;
-  left: 64px;
-  right: 64px;
-  font-size: 1.1rem;
+  top: 14px;
+  left: 50px;
+  right: 50px;
+  font-size: 0.9rem;
 }
 
 .hover-unit-preview .speed-line {
-  top: 98px;
-  left: 14px;
-  width: 56px;
-  font-size: 1rem;
-  gap: 3px;
+  top: 77px;
+  left: 11px;
+  width: 44px;
+  font-size: 0.82rem;
+  gap: 2px;
 }
 
 .hover-unit-preview .ability-line {
-  top: 88px;
-  right: 12px;
-  width: 56px;
-  font-size: 0.82rem;
+  top: 70px;
+  right: 10px;
+  width: 44px;
+  font-size: 0.68rem;
 }
 
 .hover-unit-preview .terrain-line {
-  left: 43px;
-  right: 43px;
-  bottom: 58px;
-  font-size: 0.8rem;
+  left: 34px;
+  right: 34px;
+  bottom: 46px;
+  font-size: 0.66rem;
   letter-spacing: 0;
 }
 
 .hover-unit-preview .combat-line {
-  left: 50px;
-  right: 50px;
-  bottom: 24px;
-  font-size: 1.2rem;
+  left: 40px;
+  right: 40px;
+  bottom: 19px;
+  font-size: 0.98rem;
 }
 
 .hover-unit-stats,
