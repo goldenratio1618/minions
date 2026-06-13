@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minions of Darkness</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Minions of Darkness</h1>
+          <p id="subtitle">Raise, research, reposition, and ruin everything politely.</p>
+        </div>
+        <form id="session-form" class="session-form">
+          <label>
+            Boards
+            <input id="boards-input" type="number" min="1" max="9" value="1" />
+          </label>
+          <button type="button" id="create-game">New Game</button>
+          <label>
+            Code
+            <input id="code-input" maxlength="6" autocomplete="off" />
+          </label>
+          <label>
+            Color
+            <select id="color-input">
+              <option value="yellow">Yellow</option>
+              <option value="blue">Blue</option>
+            </select>
+          </label>
+          <button type="button" id="join-game">Join</button>
+        </form>
+      </header>
+
+      <section id="notice" class="notice"></section>
+
+      <nav class="tabs">
+        <button class="tab active" data-view="play">Gameplay</button>
+        <button class="tab" data-view="maps">Map Lab</button>
+        <button class="tab" data-view="units">Unit Lab</button>
+      </nav>
+
+      <section id="play-view" class="view active">
+        <div id="game-root" class="game-root empty-state">
+          Create or join a game to start.
+        </div>
+      </section>
+
+      <section id="maps-view" class="view">
+        <div class="lab-header">
+          <h2>Random Map Generator</h2>
+          <button id="generate-map">Generate Map</button>
+        </div>
+        <div id="map-lab" class="lab-output"></div>
+      </section>
+
+      <section id="units-view" class="view">
+        <div class="lab-header">
+          <h2>Random Unit Generator</h2>
+          <button id="generate-unit">Generate Unit</button>
+        </div>
+        <div class="unit-lab-grid">
+          <div id="unit-lab" class="lab-output"></div>
+          <div class="fit-panel">
+            <h3>Existing Unit Fit</h3>
+            <img src="/static/unit-fit.svg" alt="Unit cost fit plot" />
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

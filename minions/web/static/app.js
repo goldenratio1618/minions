@@ -1,0 +1,595 @@
+const state = {
+  game: null,
+  color: localStorage.getItem("minions-color") || "yellow",
+  board: 0,
+  mode: "select",
+  selectedUnit: null,
+  selectedTemplate: null,
+  selectedCard: null,
+  spellTarget: null,
+  terrain: "firestorm",
+};
+
+const HEX_WIDTH = 64;
+const HEX_HEIGHT = 56;
+const HEX_STEP_X = HEX_WIDTH * 0.75;
+const HEX_STEP_Y = HEX_HEIGHT * 0.5;
+const MAP_PADDING = 34;
+const MAP_ROTATION = (2 * Math.PI) / 3;
+
+function rotatedBoardMetrics(size = 10) {
+  const points = [];
+  for (let q = 0; q < size; q++) {
+    for (let r = 0; r < size; r++) {
+      points.push(rawRotatedHexPosition(q, r));
+    }
+  }
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  return {
+    minX,
+    minY,
+    width: maxX - minX + HEX_WIDTH + MAP_PADDING * 2,
+    height: maxY - minY + HEX_HEIGHT + MAP_PADDING * 2,
+  };
+}
+
+const BOARD_METRICS = rotatedBoardMetrics();
+
+const $ = (id) => document.getElementById(id);
+
+function notice(message, good = false) {
+  const el = $("notice");
+  el.textContent = message || "";
+  el.style.color = good ? "#376d30" : "";
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+async function action(actionName, payload = {}) {
+  if (!state.game) return;
+  try {
+    const data = await api(`/api/games/${state.game.code}/actions`, {
+      method: "POST",
+      body: JSON.stringify({ color: state.color, action: actionName, payload }),
+    });
+    state.game = data.game;
+    renderGame();
+    notice("Done.", true);
+  } catch (err) {
+    notice(err.message);
+  }
+}
+
+function board() {
+  return state.game.boards[state.board] || state.game.boards[0];
+}
+
+function team() {
+  return state.game.teams[state.color];
+}
+
+function opponentColor() {
+  return state.color === "yellow" ? "blue" : "yellow";
+}
+
+function unitById(id) {
+  return board().units.find((unit) => unit.id === id);
+}
+
+function unitAt(hexKey) {
+  return board().units.find((unit) => unit.hex === hexKey);
+}
+
+function hexKey(q, r) {
+  return `${q},${r}`;
+}
+
+function parseHex(key) {
+  const [q, r] = key.split(",").map(Number);
+  return { q, r };
+}
+
+function svgIcon(name, extraClass = "") {
+  const cls = `unit-icon ${extraClass}`.trim();
+  const attrs = `class="${cls}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"`;
+  const icons = {
+    sword: `<svg ${attrs}><path d="M10.7 3h2.6v3h3.2v2.4h-3.2v7.1l2 2L12 22l-3.3-4.5 2-2V8.4H7.5V6h3.2z"/></svg>`,
+    bow: `<svg ${attrs}><path d="M6 3c7 3 7 15 0 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M6 3v18" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19 12l-4-3v6z"/></svg>`,
+    cannon: `<svg ${attrs}><circle cx="8" cy="17" r="2.2"/><circle cx="17" cy="17" r="2.2"/><path d="M4 13l11-7 5 5-9 5H5z"/></svg>`,
+    shield: `<svg ${attrs}><path d="M12 2l8 3v6c0 5.2-3.2 9-8 11-4.8-2-8-5.8-8-11V5z" fill="currentColor"/></svg>`,
+    anchor: `<svg ${attrs}><path d="M12 4a2 2 0 110 4 2 2 0 010-4zm-1 5h2v8.1c1.8-.3 3.2-1.4 4.1-3.2l1.8.9C17.6 17.6 15.1 19 12 19s-5.6-1.4-6.9-4.2l1.8-.9c.9 1.8 2.3 2.9 4.1 3.2V9zm-4-1h10v2H7z"/></svg>`,
+    footprints: `<svg ${attrs}><ellipse cx="8" cy="8" rx="2.3" ry="3.4" transform="rotate(-18 8 8)"/><circle cx="6" cy="3.8" r=".8"/><circle cx="8" cy="3.2" r=".75"/><circle cx="10" cy="3.8" r=".7"/><ellipse cx="16" cy="16" rx="2.3" ry="3.4" transform="rotate(-18 16 16)"/><circle cx="14" cy="11.8" r=".8"/><circle cx="16" cy="11.2" r=".75"/><circle cx="18" cy="11.8" r=".7"/></svg>`,
+    wings: `<svg ${attrs}><path d="M12 16c-4.5-.2-7.8-2.4-9.5-6.2C6 9.4 9 10.6 12 14c3-3.4 6-4.6 9.5-4.2C19.8 13.6 16.5 15.8 12 16z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 10.5c1.5.6 3 1.8 5 3.5 2-1.7 3.5-2.9 5-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
+    lumbering: `<svg ${attrs}><circle cx="7" cy="5" r="2.2"/><path d="M7 8v8M7 10l12 1M7 16l-3 5M8 16l4 5" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  };
+  return icons[name] || "";
+}
+
+function attackIcon(range, extraClass = "") {
+  if (range >= 3) return svgIcon("cannon", extraClass);
+  if (range === 2) return svgIcon("bow", extraClass);
+  return svgIcon("sword", extraClass);
+}
+
+function speedIcon(unit) {
+  const stats = unit.stats || unit;
+  const parts = [];
+  if (stats.flying) parts.push(svgIcon("wings"));
+  if (stats.lumbering) parts.push(svgIcon("lumbering"));
+  if (!parts.length) parts.push(svgIcon("footprints"));
+  return parts.join("");
+}
+
+function unitToken(unit, preview = false) {
+  const tpl = unit.template || unit;
+  const stats = unit.stats || unit;
+  const attack = stats.attack !== undefined ? stats.attack : tpl.attack;
+  const atk = stats.flurry
+    ? `<span class="stat-value">${attack}</span>${attackIcon(stats.range)}${attackIcon(stats.range, "mirror")}`
+    : `<span class="stat-value">${attack}</span>${attackIcon(stats.range)}`;
+  const defenseIcon = stats.persistent ? svgIcon("anchor") : svgIcon("shield");
+  const defenseInner = `<span class="stat-value">${stats.defense}</span>${defenseIcon}`;
+  const defense = stats.ward ? `<span class="warded">${defenseInner}</span>` : defenseInner;
+  const ability = [
+    stats.spawn ? "⬡→⬡" : "",
+    stats.blink ? "✦" : "",
+  ].filter(Boolean).join("");
+  const terrain = (stats.terrainSpawn || tpl.terrainSpawn || []).map((kind) => kind.slice(0, 4).toUpperCase()).join(" ");
+  return `
+    <div class="unit-token ${preview ? "preview-token" : ""} ${unit.team || "yellow"} ${unit.exhausted ? "exhausted" : ""}">
+      <div class="cost-line">$${tpl.cost}/${tpl.rebate}</div>
+      <div class="unit-name">${tpl.name}</div>
+      <div class="speed-line">${stats.speed} ${speedIcon({ stats })}</div>
+      <div class="ability-line">${ability}</div>
+      <div class="terrain-line">${terrain}</div>
+      <div class="combat-line"><span>${atk}</span><span>${defense}</span></div>
+    </div>
+  `;
+}
+
+function rawRotatedHexPosition(q, r) {
+  const x = (q - r) * HEX_STEP_X;
+  const y = (q + r) * HEX_STEP_Y;
+  return {
+    x: Math.cos(MAP_ROTATION) * x - Math.sin(MAP_ROTATION) * y,
+    y: Math.sin(MAP_ROTATION) * x + Math.cos(MAP_ROTATION) * y,
+  };
+}
+
+function hexPosition(q, r) {
+  const raw = rawRotatedHexPosition(q, r);
+  const x = raw.x - BOARD_METRICS.minX + MAP_PADDING;
+  const y = raw.y - BOARD_METRICS.minY + MAP_PADDING;
+  if (state.color === "yellow") {
+    return {
+      x: BOARD_METRICS.width - HEX_WIDTH - x,
+      y: BOARD_METRICS.height - HEX_HEIGHT - y,
+    };
+  }
+  return {
+    x,
+    y,
+  };
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  state.selectedCard = null;
+  state.spellTarget = null;
+  renderGame();
+}
+
+function renderGame() {
+  const root = $("game-root");
+  if (!state.game) {
+    root.className = "game-root empty-state";
+    root.textContent = "Create or join a game to start.";
+    return;
+  }
+  root.className = "game-root";
+  const currentBoard = board();
+  const active = state.game.turn === state.color;
+  const selected = state.selectedUnit ? unitById(state.selectedUnit) : null;
+  root.innerHTML = `
+    <div class="status-strip">
+      <div>
+        <span class="status-pill">Code ${state.game.code}</span>
+        <span class="status-pill">You ${state.color}</span>
+        <span class="status-pill">Turn ${state.game.turn}</span>
+        <span class="status-pill">${state.game.phase} phase</span>
+        <span class="status-pill">Score Y ${state.game.scores.yellow} / B ${state.game.scores.blue}</span>
+      </div>
+      <div>
+        <span class="status-pill">Yellow $${state.game.teams.yellow.souls}</span>
+        <span class="status-pill">Blue $${state.game.teams.blue.souls}</span>
+        <span class="status-pill">Mana ${team().mana}</span>
+      </div>
+    </div>
+    <div class="game-layout">
+      <div>
+        <div class="board-tabs">
+          ${state.game.boards.map((b, idx) => `<button class="secondary ${idx === state.board ? "active" : ""}" data-board="${idx}">Board ${idx + 1}</button>`).join("")}
+        </div>
+        <div class="action-bar">
+          <button ${!active ? "disabled" : ""} onclick="action('set_phase', {phase:'movement'})">Movement Phase</button>
+          <button class="${state.mode === "select" ? "active" : ""}" onclick="setMode('select')">Select</button>
+          <button class="${state.mode === "move" ? "active" : ""}" onclick="setMode('move')">Move</button>
+          <button class="${state.mode === "attack" ? "active" : ""}" onclick="setMode('attack')">Attack</button>
+          <button class="${state.mode === "spawn" ? "active" : ""}" onclick="setMode('spawn')">Spawn Unit</button>
+          <button class="${state.mode === "terrain" ? "active" : ""}" onclick="setMode('terrain')">Spawn Terrain</button>
+          <select id="terrain-select">
+            ${Object.entries(state.game.terrainLabels).map(([kind, label]) => `<option value="${kind}" ${kind === state.terrain ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+          <button onclick="action('end_turn')">End Turn</button>
+        </div>
+        <div class="map-wrap"><div class="hex-map">${renderMap(currentBoard)}</div></div>
+      </div>
+      <aside class="side-panel">
+        <section class="side-section">
+          <h3>Selection</h3>
+          <div class="mini-card">${selected ? renderSelectedUnit(selected) : "No unit selected."}</div>
+        </section>
+        <section class="side-section">
+          <h3>Hover</h3>
+          <div id="hover-card" class="hover-card mini-card">Hover a tile to inspect it.</div>
+        </section>
+        <section class="side-section">
+          <h3>Reinforcements</h3>
+          <div class="compact-list">${renderReinforcements(currentBoard)}</div>
+        </section>
+        <section class="side-section">
+          <h3>Research & Buy</h3>
+          <div class="mini-actions">
+            <button onclick="action('research')">Research $1</button>
+            <button onclick="action('buy', {board:${state.board}, templateId:'zombie'})">Buy Zombie $2</button>
+          </div>
+          <div class="compact-list">${renderResearch()}</div>
+        </section>
+        <section class="side-section">
+          <h3>Spells</h3>
+          <div class="compact-list">${renderHand()}</div>
+        </section>
+        <section class="side-section">
+          <h3>Log</h3>
+          <div class="log">${state.game.log.slice().reverse().map((line) => `<div>${line}</div>`).join("")}</div>
+        </section>
+      </aside>
+    </div>
+  `;
+  document.querySelectorAll("[data-board]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.board = Number(button.dataset.board);
+      state.selectedUnit = null;
+      renderGame();
+    });
+  });
+  const terrainSelect = $("terrain-select");
+  if (terrainSelect) terrainSelect.addEventListener("change", (event) => (state.terrain = event.target.value));
+}
+
+function renderSelectedUnit(unit) {
+  return `
+    <strong>${unit.template.name}</strong>
+    <div>${unit.team} at ${unit.hex}; damage ${unit.damage}/${unit.stats.defense}${unit.exhausted ? "; exhausted" : ""}</div>
+    <div class="mini-actions">
+      <button onclick="setMode('move')">Move</button>
+      <button onclick="setMode('attack')">Attack</button>
+      <button onclick="action('blink_unit', {board:${state.board}, unitId:'${unit.id}'})">Blink</button>
+    </div>
+  `;
+}
+
+function renderMap(b) {
+  const water = new Set(b.map.water);
+  const graves = new Set(b.map.graveyards);
+  const terrainByHex = {};
+  Object.entries(b.terrain).forEach(([kind, key]) => {
+    if (key) terrainByHex[key] = kind;
+  });
+  const spawnClass = {};
+  Object.entries(b.map.spawnTiles).forEach(([team, keys]) => keys.forEach((key) => (spawnClass[key] = `spawn-${team}`)));
+  let html = "";
+  for (let q = 0; q < b.map.size; q++) {
+    for (let r = 0; r < b.map.size; r++) {
+      const key = hexKey(q, r);
+      const { x, y } = hexPosition(q, r);
+      const unit = unitAt(key);
+      const classes = [
+        "hex",
+        water.has(key) ? "water" : "",
+        graves.has(key) ? "graveyard" : "",
+        spawnClass[key] || "",
+        state.selectedUnit && unit && unit.id === state.selectedUnit ? "selected" : "",
+      ].join(" ");
+      html += `
+        <button class="${classes}" style="left:${x}px; top:${y}px" data-key="${key}" data-q="${q}" data-r="${r}" data-unit="${unit ? unit.id : ""}">
+          <span class="coord">${key}</span>
+          ${graves.has(key) ? '<span class="grave-mark">GY</span>' : ""}
+          ${terrainByHex[key] ? `<span class="terrain-chip">${terrainByHex[key].slice(0, 5).toUpperCase()}</span>` : ""}
+          ${unit ? unitToken(unit) : ""}
+        </button>
+      `;
+    }
+  }
+  setTimeout(() => {
+    document.querySelectorAll(".hex").forEach((hex) => {
+      hex.addEventListener("click", () => handleHexClick(Number(hex.dataset.q), Number(hex.dataset.r), hex.dataset.unit || null));
+      hex.addEventListener("mouseenter", () => updateHoverCard(hex.dataset.key));
+      hex.addEventListener("focus", () => updateHoverCard(hex.dataset.key));
+    });
+  }, 0);
+  return `<div class="hex-map-inner" style="width:${BOARD_METRICS.width}px; height:${BOARD_METRICS.height}px">${html}</div>`;
+}
+
+function boardLookups(b) {
+  const water = new Set(b.map.water);
+  const graves = new Set(b.map.graveyards);
+  const terrainByHex = {};
+  Object.entries(b.terrain).forEach(([kind, key]) => {
+    if (key) terrainByHex[key] = kind;
+  });
+  const spawnByHex = {};
+  Object.entries(b.map.spawnTiles).forEach(([team, keys]) => keys.forEach((key) => (spawnByHex[key] = team)));
+  return { water, graves, terrainByHex, spawnByHex };
+}
+
+function updateHoverCard(key) {
+  const card = $("hover-card");
+  if (!card || !state.game) return;
+  const b = board();
+  const { water, graves, terrainByHex, spawnByHex } = boardLookups(b);
+  const unit = unitAt(key);
+  const properties = [];
+  properties.push(`Hex ${key}`);
+  properties.push(water.has(key) ? "Water" : "Plain");
+  if (graves.has(key)) properties.push("Graveyard");
+  if (spawnByHex[key]) properties.push(`${spawnByHex[key]} spawn`);
+  if (terrainByHex[key]) properties.push(state.game.terrainLabels[terrainByHex[key]]);
+  card.innerHTML = `
+    <div class="hover-props">${properties.map((property) => `<span>${property}</span>`).join("")}</div>
+    ${
+      unit
+        ? `<div class="hover-unit-name">${unit.template.name}</div><div class="hover-unit-preview">${unitToken(unit, true)}</div><div class="hover-unit-stats">${unit.team}; ${unit.stats.speed} speed, ${unit.stats.range} range, ${unit.stats.attack}/${unit.stats.defense}${unit.exhausted ? "; exhausted" : ""}</div>`
+        : '<div class="hover-empty">No unit on this tile.</div>'
+    }
+  `;
+}
+
+function handleHexClick(q, r, unitId) {
+  const key = hexKey(q, r);
+  if (state.selectedCard) {
+    handleSpellClick(q, r, unitId);
+    return;
+  }
+  if (unitId && state.mode === "attack" && state.selectedUnit && unitId !== state.selectedUnit) {
+    action("attack", { board: state.board, attackerId: state.selectedUnit, targetId: unitId });
+    return;
+  }
+  if (state.mode === "move" && state.selectedUnit) {
+    action("move", { board: state.board, unitId: state.selectedUnit, q, r });
+    return;
+  }
+  if (state.mode === "spawn" && state.selectedUnit && state.selectedTemplate) {
+    action("spawn", { board: state.board, sourceId: state.selectedUnit, templateId: state.selectedTemplate, q, r });
+    return;
+  }
+  if (state.mode === "terrain" && state.selectedUnit) {
+    action("spawn_terrain", { board: state.board, sourceId: state.selectedUnit, terrain: state.terrain, q, r });
+    return;
+  }
+  if (unitId) {
+    state.selectedUnit = unitId;
+    renderGame();
+  } else {
+    state.selectedUnit = null;
+    renderGame();
+  }
+}
+
+function renderReinforcements(b) {
+  const list = b.reinforcements[state.color] || [];
+  if (!list.length) return '<div class="mini-card">No reinforcements on this board.</div>';
+  return list.map((unit) => `
+    <div class="mini-card">
+      <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
+      <div>${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
+      <button class="secondary ${state.selectedTemplate === unit.id ? "active" : ""}" onclick="state.selectedTemplate='${unit.id}'; setMode('spawn')">Use for Spawn</button>
+    </div>
+  `).join("");
+}
+
+function renderResearch() {
+  const researched = team().researched || [];
+  if (!researched.length) return '<div class="mini-card">No researched minions yet.</div>';
+  return researched.map((unit) => `
+    <div class="mini-card">
+      <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
+      <div>${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
+      <button class="secondary" onclick="action('buy', {board:${state.board}, templateId:'${unit.id}'})">Buy</button>
+    </div>
+  `).join("");
+}
+
+function renderHand() {
+  const hand = team().hand || [];
+  if (!hand.length) return '<div class="mini-card">No spells in hand.</div>';
+  return hand.map((card) => `
+    <div class="mini-card">
+      <strong>${card.name}${card.manaCost ? ` (${card.manaCost} mana)` : ""}</strong>
+      <div>${card.duration ? "Duration. " : ""}${card.cantrip ? "Cantrip. " : ""}${card.spawnPhaseOnly ? "Spawn only. " : ""}${card.text}</div>
+      <div class="mini-actions">
+        <button class="secondary ${state.selectedCard && state.selectedCard.cardId === card.cardId ? "active" : ""}" onclick="selectCardById('${card.cardId}', false)">Cast</button>
+        <button class="secondary" onclick="selectCardById('${card.cardId}', true)">Discard</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function selectCardById(cardId, discard) {
+  const card = (team().hand || []).find((candidate) => candidate.cardId === cardId);
+  if (card) selectCard(card, discard);
+}
+
+function selectCard(card, discard) {
+  state.selectedCard = { ...card, discard };
+  state.spellTarget = null;
+  state.mode = "spell";
+  notice(discard && !card.cantrip ? "Discarding for mana." : `Select a target for ${card.name}.`, true);
+  if (discard && !card.cantrip) {
+    action("discard_spell", { cardId: card.cardId });
+  } else {
+    renderGame();
+  }
+}
+
+function spellNeedsDestination(spellId) {
+  return ["stumble", "double_stumble", "reposition", "firestorm", "earthquake", "flood", "whirlwind", "terraform", "lesser_spawn", "raise_zombie"].includes(spellId);
+}
+
+function spellCanTargetTerrain(spellId) {
+  return spellId === "normalize";
+}
+
+function handleSpellClick(q, r, unitId) {
+  const card = state.selectedCard;
+  if (!card) return;
+  if (spellCanTargetTerrain(card.id) && !unitId) {
+    const payload = { board: state.board, cardId: card.cardId, q, r };
+    action(card.discard ? "discard_spell" : "cast_spell", payload);
+    state.selectedCard = null;
+    return;
+  }
+  if (!state.spellTarget && unitId) {
+    if (spellNeedsDestination(card.id)) {
+      state.spellTarget = unitId;
+      notice(`Target selected for ${card.name}; click the destination hex.`, true);
+      return;
+    }
+    const payload = { board: state.board, cardId: card.cardId, targetId: unitId };
+    action(card.discard ? "discard_spell" : "cast_spell", payload);
+    state.selectedCard = null;
+    return;
+  }
+  if (state.spellTarget) {
+    const payload = {
+      board: state.board,
+      cardId: card.cardId,
+      targetId: state.spellTarget,
+      q,
+      r,
+      terrain: state.terrain,
+      templateId: state.selectedTemplate,
+    };
+    action(card.discard ? "discard_spell" : "cast_spell", payload);
+    state.selectedCard = null;
+    state.spellTarget = null;
+  }
+}
+
+function renderGeneratedMap(map) {
+  const fakeGame = state.game;
+  const fakeBoard = {
+    map,
+    terrain: { firestorm: null, earthquake: null, flood: null, whirlwind: null },
+    units: [],
+  };
+  const oldGame = state.game;
+  const oldBoard = state.board;
+  state.game = { boards: [fakeBoard], terrainLabels: map.terrainLabels };
+  state.board = 0;
+  const html = `<div class="map-wrap"><div class="hex-map">${renderMap(fakeBoard)}</div></div><pre>${JSON.stringify(map, null, 2)}</pre>`;
+  state.game = oldGame;
+  state.board = oldBoard;
+  return html;
+}
+
+function renderGeneratedUnit(unit, alpha) {
+  return `
+    <div class="unit-preview">${unitToken(unit, true)}</div>
+    <pre>${JSON.stringify({ alpha, unit }, null, 2)}</pre>
+  `;
+}
+
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+    tab.classList.add("active");
+    $(`${tab.dataset.view}-view`).classList.add("active");
+  });
+});
+
+$("color-input").value = state.color;
+$("color-input").addEventListener("change", (event) => {
+  state.color = event.target.value;
+  localStorage.setItem("minions-color", state.color);
+  renderGame();
+});
+
+$("create-game").addEventListener("click", async () => {
+  try {
+    const data = await api("/api/games", {
+      method: "POST",
+      body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
+    });
+    state.game = data.game;
+    $("code-input").value = state.game.code;
+    renderGame();
+    notice(`Created game ${state.game.code}.`, true);
+  } catch (err) {
+    notice(err.message);
+  }
+});
+
+$("join-game").addEventListener("click", async () => {
+  try {
+    state.color = $("color-input").value;
+    localStorage.setItem("minions-color", state.color);
+    const code = $("code-input").value.trim().toUpperCase();
+    const data = await api(`/api/games/${code}/join`, {
+      method: "POST",
+      body: JSON.stringify({ color: state.color, name: state.color }),
+    });
+    state.game = data.game;
+    renderGame();
+    notice(`Joined ${code} as ${state.color}.`, true);
+  } catch (err) {
+    notice(err.message);
+  }
+});
+
+$("generate-map").addEventListener("click", async () => {
+  try {
+    const data = await api("/api/generators/map");
+    $("map-lab").innerHTML = renderGeneratedMap(data.map);
+    notice("Generated map.", true);
+  } catch (err) {
+    notice(err.message);
+  }
+});
+
+$("generate-unit").addEventListener("click", async () => {
+  try {
+    const data = await api("/api/generators/unit");
+    $("unit-lab").innerHTML = renderGeneratedUnit(data.unit, data.alpha);
+    notice("Generated unit.", true);
+  } catch (err) {
+    notice(err.message);
+  }
+});
+
+window.action = action;
+window.setMode = setMode;
+window.selectCardById = selectCardById;
+window.state = state;

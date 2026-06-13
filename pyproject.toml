@@ -1,0 +1,12 @@
+[project]
+name = "minions-of-darkness"
+version = "0.1.0"
+description = "A modular Python implementation of Minions of Darkness."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+minions-of-darkness = "minions.app:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

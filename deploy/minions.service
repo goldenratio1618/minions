@@ -1,0 +1,15 @@
+[Unit]
+Description=Minions of Darkness web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/minions
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m minions.app --host 0.0.0.0 --port 80
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
