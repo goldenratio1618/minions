@@ -951,8 +951,18 @@ def draw_spell(game: Game, color: str) -> None:
 def resign_board(game: Game, color: str, board_index: int) -> None:
     ensure_turn(game, color)
     board = board_at(game, board_index)
+    if board.winner:
+        raise RuleError("that board is already decided")
+    winner = OPPONENT[color]
     board.resigned_by = color
-    game.log.append(f"{color.title()} resigned board {board.index + 1}; it resolves at the start of {OPPONENT[color]}'s next turn.")
+    board.winner = winner
+    game.scores[winner] += 1
+    game.log.append(f"{color.title()} resigned board {board.index + 1}; {winner.title()} gained a board point.")
+    if game.scores[winner] >= game.board_points_to_win:
+        game.winner = winner
+        game.log.append(f"{winner.title()} wins the match.")
+    else:
+        game.log.append(f"Board {board.index + 1} will reset at the start of {winner.title()}'s next turn.")
 
 
 def score_board(game: Game, board: BoardState, winner: str, reason: str) -> None:
@@ -981,10 +991,9 @@ def _graveyard_occupants(board: BoardState) -> Dict[str, int]:
 
 def start_turn_checks(game: Game, color: str) -> None:
     for board in game.boards:
-        if board.resigned_by == OPPONENT[color]:
-            score_board(game, board, color, "opponent resignation")
-            if game.winner:
-                return
+        if board.resigned_by == OPPONENT[color] and board.winner == color:
+            reset_board(game, board, opener=color)
+            continue
         counts = _graveyard_occupants(board)
         if counts[color] >= 8:
             score_board(game, board, color, "occupied at least 8 graveyards at turn start")

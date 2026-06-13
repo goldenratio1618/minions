@@ -246,6 +246,7 @@ function renderGame() {
             ${Object.entries(state.game.terrainLabels).map(([kind, label]) => `<option value="${kind}" ${kind === state.terrain ? "selected" : ""}>${label}</option>`).join("")}
           </select>
           <button ${!active || !state.game.canRedo ? "disabled" : ""} onclick="action('redo')">Redo</button>
+          <button ${!active || currentBoard.winner ? "disabled" : ""} onclick="confirm('Resign this board? Your opponent gets a board point now.') && action('resign_board', {board:${state.board}})">Resign Board</button>
           <button ${!active ? "disabled" : ""} onclick="action('end_turn')">End Turn</button>
           <span class="action-hint">Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation.</span>
         </div>

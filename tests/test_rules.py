@@ -74,6 +74,31 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(len(game.teams["blue"].hand), 2)
         self.assertGreaterEqual(game.teams["yellow"].souls, 6)
 
+    def test_resign_board_scores_now_and_resets_on_opponent_turn(self):
+        game = create_game(board_count=2, seed=19)
+        board = game.boards[0]
+        original_necromancers = sorted(unit.id for unit in board.units.values() if unit.template_id == "necromancer")
+        apply_action(game, "yellow", "resign_board", {"board": 0})
+        self.assertEqual(game.scores["blue"], 1)
+        self.assertIsNone(game.winner)
+        self.assertEqual(board.winner, "blue")
+        self.assertEqual(board.resigned_by, "yellow")
+        self.assertEqual(sorted(unit.id for unit in board.units.values() if unit.template_id == "necromancer"), original_necromancers)
+
+        end_turn(game, "yellow")
+        reset_board = game.boards[0]
+        self.assertEqual(game.turn, "blue")
+        self.assertIsNone(reset_board.winner)
+        self.assertIsNone(reset_board.resigned_by)
+        self.assertNotEqual(sorted(unit.id for unit in reset_board.units.values() if unit.template_id == "necromancer"), original_necromancers)
+        self.assertEqual(game.scores["blue"], 1)
+
+    def test_resign_board_can_end_match_immediately(self):
+        game = create_game(board_count=1, seed=20)
+        apply_action(game, "yellow", "resign_board", {"board": 0})
+        self.assertEqual(game.scores["blue"], 1)
+        self.assertEqual(game.winner, "blue")
+
     def test_research_creates_extensible_template(self):
         game = create_game(board_count=1, seed=4)
         game.teams["yellow"].souls = 3
