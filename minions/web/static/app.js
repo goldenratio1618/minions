@@ -15,7 +15,7 @@ const HEX_HEIGHT = 70;
 const HEX_STEP_X = HEX_WIDTH * 0.75;
 const HEX_STEP_Y = HEX_HEIGHT * 0.5;
 const MAP_PADDING = 34;
-const MAP_ROTATION = Math.PI / 2;
+const MAP_ROTATION = (5 * Math.PI) / 6;
 
 function rotatedBoardMetrics(size = 10) {
   const points = [];
