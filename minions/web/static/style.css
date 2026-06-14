@@ -159,9 +159,13 @@ p {
 
 .game-layout {
   display: grid;
-  grid-template-columns: minmax(720px, 1fr) 380px;
+  grid-template-columns: minmax(600px, 760px) minmax(560px, 1fr);
   gap: 16px;
   align-items: start;
+}
+
+.map-column {
+  min-width: 0;
 }
 
 .status-strip,
@@ -308,41 +312,49 @@ p {
   z-index: 2;
 }
 
-.hex.water {
+.hex.water,
+.hover-hex-preview.water {
   --hex-fill: var(--water);
 }
 
-.hex.graveyard {
+.hex.graveyard,
+.hover-hex-preview.graveyard {
   --hex-fill: var(--grave);
   color: white;
 }
 
-.hex.terrain-firestorm {
+.hex.terrain-firestorm,
+.hover-hex-preview.terrain-firestorm {
   --hex-fill: var(--terrain-firestorm);
   color: #fff6ec;
 }
 
-.hex.terrain-earthquake {
+.hex.terrain-earthquake,
+.hover-hex-preview.terrain-earthquake {
   --hex-fill: var(--terrain-earthquake);
   color: #31281b;
 }
 
-.hex.terrain-flood {
+.hex.terrain-flood,
+.hover-hex-preview.terrain-flood {
   --hex-fill: var(--terrain-flood);
   color: #edf8ff;
 }
 
-.hex.terrain-whirlwind {
+.hex.terrain-whirlwind,
+.hover-hex-preview.terrain-whirlwind {
   --hex-fill: var(--terrain-whirlwind);
   color: #26313a;
 }
 
-.hex.spawn-yellow {
+.hex.spawn-yellow,
+.hover-hex-preview.spawn-yellow {
   --hex-border: rgba(255, 212, 71, 0.95);
   --hex-border-width: 4px;
 }
 
-.hex.spawn-blue {
+.hex.spawn-blue,
+.hover-hex-preview.spawn-blue {
   --hex-border: rgba(82, 167, 255, 0.95);
   --hex-border-width: 4px;
 }
@@ -641,8 +653,37 @@ p {
 
 .side-panel {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "reinforcements hover"
+    "research actions"
+    "spells log";
   gap: 12px;
   padding: 12px;
+}
+
+.panel-reinforcements {
+  grid-area: reinforcements;
+}
+
+.panel-research {
+  grid-area: research;
+}
+
+.panel-spells {
+  grid-area: spells;
+}
+
+.panel-hover {
+  grid-area: hover;
+}
+
+.panel-actions {
+  grid-area: actions;
+}
+
+.panel-log {
+  grid-area: log;
 }
 
 .side-section {
@@ -752,7 +793,8 @@ p {
 
 .hover-card {
   height: 252px;
-  overflow: auto;
+  overflow: hidden;
+  align-content: start;
 }
 
 .hover-props {
@@ -767,6 +809,55 @@ p {
   padding: 3px 7px;
   font-size: 0.78rem;
   font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.hover-hex-preview {
+  position: relative;
+  width: 190px;
+  height: 166px;
+  margin: auto;
+  clip-path: var(--hex-shape);
+  --hex-fill: #d7b87c;
+  --hex-border: rgba(54, 42, 30, 0.32);
+  --hex-border-width: 5px;
+  background: transparent;
+  color: var(--ink);
+  isolation: isolate;
+}
+
+.hover-hex-preview::before,
+.hover-hex-preview::after {
+  content: "";
+  position: absolute;
+  clip-path: var(--hex-shape);
+  pointer-events: none;
+}
+
+.hover-hex-preview::before {
+  inset: 0;
+  background: var(--hex-border);
+  z-index: 0;
+}
+
+.hover-hex-preview::after {
+  inset: var(--hex-border-width);
+  background: var(--hex-fill);
+  z-index: 1;
+}
+
+.hover-hex-preview > * {
+  z-index: 2;
+}
+
+.hover-hex-preview .coord {
+  top: 18px;
+  font-size: 1rem;
+}
+
+.hover-hex-preview .terrain-mark {
+  font-size: 2.75rem;
 }
 
 .hover-unit-name {
@@ -964,6 +1055,17 @@ pre {
   .game-layout,
   .unit-lab-grid {
     grid-template-columns: 1fr;
+  }
+
+  .side-panel {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "reinforcements"
+      "research"
+      "spells"
+      "hover"
+      "actions"
+      "log";
   }
 
   .map-wrap {

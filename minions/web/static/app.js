@@ -12,6 +12,7 @@ const state = {
   dragGhost: null,
   mapPan: null,
   mapZoom: Math.min(2.4, Math.max(0.55, Number(localStorage.getItem("minions-map-zoom")) || 1)),
+  mapScroll: {},
   pathPreview: [],
   suppressClick: false,
   terrain: "firestorm",
@@ -347,6 +348,31 @@ function setMode(mode) {
   renderGame();
 }
 
+function mapScrollKey(index = state.board) {
+  return state.game ? `${state.game.code}:${index}` : `board:${index}`;
+}
+
+function captureMapScroll() {
+  const wrap = document.querySelector(".map-wrap[data-map-wrap]");
+  if (!wrap || !state.game) return;
+  const index = Number(wrap.dataset.boardIndex || state.board);
+  state.mapScroll[mapScrollKey(index)] = {
+    left: wrap.scrollLeft,
+    top: wrap.scrollTop,
+  };
+}
+
+function restoreMapScroll() {
+  const wrap = document.querySelector(".map-wrap[data-map-wrap]");
+  if (!wrap || !state.game) return;
+  const saved = state.mapScroll[mapScrollKey()];
+  if (!saved) return;
+  requestAnimationFrame(() => {
+    wrap.scrollLeft = saved.left;
+    wrap.scrollTop = saved.top;
+  });
+}
+
 function renderGame() {
   const root = $("game-root");
   if (!state.game) {
@@ -354,10 +380,10 @@ function renderGame() {
     root.textContent = "Create or join a game to start.";
     return;
   }
+  captureMapScroll();
   root.className = "game-root";
   const currentBoard = board();
   const active = state.game.turn === state.color && !state.aiThinking;
-  const selected = state.selectedUnit ? unitById(state.selectedUnit) : null;
   root.innerHTML = `
     <div class="status-strip">
       <div>
@@ -375,7 +401,7 @@ function renderGame() {
       </div>
     </div>
     <div class="game-layout">
-      <div>
+      <div class="map-column">
         <div class="board-tabs">
           ${state.game.boards.map((b, idx) => `<button class="secondary ${idx === state.board ? "active" : ""}" data-board="${idx}">Board ${idx + 1}</button>`).join("")}
         </div>
@@ -388,22 +414,14 @@ function renderGame() {
           <button ${!active ? "disabled" : ""} onclick="action('end_turn')">End Turn</button>
           <span class="action-hint">${state.vsAI && state.game.turn === state.aiColor ? "The AI is taking its turn." : "Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation."}</span>
         </div>
-        <div class="map-wrap" data-map-wrap>${renderMap(currentBoard)}</div>
+        <div class="map-wrap" data-map-wrap data-board-index="${state.board}">${renderMap(currentBoard)}</div>
       </div>
       <aside class="side-panel">
-        <section class="side-section">
-          <h3>Selection</h3>
-          <div class="mini-card">${selected ? renderSelectedUnit(selected) : "No unit selected."}</div>
-        </section>
-        <section class="side-section">
-          <h3>Hover</h3>
-          <div id="hover-card" class="hover-card mini-card">Hover a tile to inspect it.</div>
-        </section>
-        <section class="side-section" data-drop-zone="reinforcements">
+        <section class="side-section panel-reinforcements" data-drop-zone="reinforcements">
           <h3>Reinforcements</h3>
           <div class="compact-list">${renderReinforcements(currentBoard)}</div>
         </section>
-        <section class="side-section">
+        <section class="side-section panel-research">
           <h3>Research & Buy</h3>
           <div class="mini-actions">
             <button onclick="action('research')">Research $1</button>
@@ -411,15 +429,19 @@ function renderGame() {
           </div>
           <div class="compact-list">${renderResearch()}</div>
         </section>
-        <section class="side-section">
+        <section class="side-section panel-spells">
           <h3>Spells</h3>
           <div class="compact-list scroll-list spells-scroll">${renderHand(currentBoard)}</div>
         </section>
-        <section class="side-section">
+        <section class="side-section panel-hover">
+          <h3>Hover</h3>
+          <div id="hover-card" class="hover-card mini-card">Hover a tile to inspect it.</div>
+        </section>
+        <section class="side-section panel-actions">
           <h3>Turn Actions</h3>
           <div class="compact-list scroll-list actions-scroll">${renderTurnHistory()}</div>
         </section>
-        <section class="side-section">
+        <section class="side-section panel-log">
           <h3>Log</h3>
           <div class="log">${state.game.log.slice().reverse().map((line) => `<div>${line}</div>`).join("")}</div>
         </section>
@@ -442,20 +464,7 @@ function renderGame() {
   const terrainSelect = $("terrain-select");
   if (terrainSelect) terrainSelect.addEventListener("change", (event) => (state.terrain = event.target.value));
   wireMapInteractions();
-}
-
-function renderSelectedUnit(unit) {
-  const health = currentHealth(unit);
-  const baseHealth = unit.template.defense;
-  return `
-    <strong>${unit.template.name}</strong>
-    <div>${unit.team} at ${unit.hex}; health ${health}/${baseHealth}${unit.exhausted ? "; exhausted" : ""}</div>
-    <div class="mini-actions">
-      <button onclick="setMode('move')">Move</button>
-      <button onclick="setMode('attack')">Attack</button>
-      <button onclick="action('blink_unit', {board:${state.board}, unitId:'${unit.id}'})">Blink</button>
-    </div>
-  `;
+  restoreMapScroll();
 }
 
 function findTemplate(templateId) {
@@ -484,28 +493,27 @@ function terrainMarker(kind) {
   return "";
 }
 
+function hexSurfaceClasses(key, lookups) {
+  return [
+    lookups.water.has(key) ? "water" : "",
+    lookups.graves.has(key) ? "graveyard" : "",
+    lookups.terrainByHex[key] ? `terrain-${lookups.terrainByHex[key]}` : "",
+    lookups.spawnByHex[key] ? `spawn-${lookups.spawnByHex[key]}` : "",
+  ].filter(Boolean);
+}
+
 function renderMap(b) {
-  const water = new Set(b.map.water);
-  const graves = new Set(b.map.graveyards);
-  const terrainByHex = {};
-  Object.entries(b.terrain).forEach(([kind, key]) => {
-    if (key) terrainByHex[key] = kind;
-  });
-  const spawnClass = {};
-  Object.entries(b.map.spawnTiles).forEach(([team, keys]) => keys.forEach((key) => (spawnClass[key] = `spawn-${team}`)));
+  const lookups = boardLookups(b);
   let html = "";
   for (let q = 0; q < b.map.size; q++) {
     for (let r = 0; r < b.map.size; r++) {
       const key = hexKey(q, r);
       const { x, y } = hexPosition(q, r);
       const unit = unitAt(key);
-      const terrain = terrainByHex[key];
+      const terrain = lookups.terrainByHex[key];
       const classes = [
         "hex",
-        water.has(key) ? "water" : "",
-        graves.has(key) ? "graveyard" : "",
-        terrain ? `terrain-${terrain}` : "",
-        spawnClass[key] || "",
+        ...hexSurfaceClasses(key, lookups),
         state.selectedUnit && unit && unit.id === state.selectedUnit ? "selected" : "",
       ].join(" ");
       html += `
@@ -689,7 +697,8 @@ function updateHoverCard(key) {
   const card = $("hover-card");
   if (!card || !state.game) return;
   const b = board();
-  const { water, graves, terrainByHex, spawnByHex } = boardLookups(b);
+  const lookups = boardLookups(b);
+  const { water, graves, terrainByHex, spawnByHex } = lookups;
   const unit = unitAt(key);
   const properties = [];
   properties.push(`Hex ${key}`);
@@ -697,13 +706,16 @@ function updateHoverCard(key) {
   if (graves.has(key)) properties.push("Graveyard");
   if (spawnByHex[key]) properties.push(`${spawnByHex[key]} spawn`);
   if (terrainByHex[key]) properties.push(state.game.terrainLabels[terrainByHex[key]]);
+  if (!unit) {
+    const terrain = terrainByHex[key];
+    card.innerHTML = `<div class="hover-hex-preview ${hexSurfaceClasses(key, lookups).join(" ")}"><span class="coord">${key}</span>${terrain ? terrainMarker(terrain) : ""}</div>`;
+    return;
+  }
   card.innerHTML = `
     <div class="hover-props">${properties.map((property) => `<span>${property}</span>`).join("")}</div>
-    ${
-      unit
-        ? `<div class="hover-unit-name">${unit.template.name}</div><div class="hover-unit-preview">${unitToken(unit, true)}</div><div class="hover-unit-stats">${unit.team}; ${unit.stats.speed} speed, ${unit.stats.range} range, ${unit.stats.attack}/${currentHealth(unit)} health${unit.exhausted ? "; exhausted" : ""}</div>`
-        : '<div class="hover-empty">No unit on this tile.</div>'
-    }
+    <div class="hover-unit-name">${unit.template.name}</div>
+    <div class="hover-unit-preview">${unitToken(unit, true)}</div>
+    <div class="hover-unit-stats">${unit.team}; ${unit.stats.speed} speed, ${unit.stats.range} range, ${unit.stats.attack}/${currentHealth(unit)} health${unit.exhausted ? "; exhausted" : ""}</div>
   `;
 }
 
