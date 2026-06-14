@@ -303,6 +303,8 @@ def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA) -> Un
         attack = "*"
     if isinstance(attack, int) and attack >= 6 and flurry and rng.random() < 0.25:
         attack = "**"
+    if attack == 1 or attack == "*":
+        flurry = False
     draft = UnitTemplate(
         id="draft",
         name="Draft",

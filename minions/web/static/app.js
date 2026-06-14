@@ -234,6 +234,7 @@ function speedIcon(unit) {
 function unitToken(unit, preview = false) {
   const tpl = unit.template || unit;
   const stats = unit.stats || unit;
+  const onGraveyard = Boolean(unit.hex && state.game && boardLookups(board()).graves.has(unit.hex));
   const hasNoMovementLeft =
     unit.id &&
     unit.moved &&
@@ -251,7 +252,7 @@ function unitToken(unit, preview = false) {
     : "";
   const attack = stats.attack !== undefined ? stats.attack : tpl.attack;
   const atk = stats.flurry
-    ? `<span class="stat-value">${attack}</span>${attackIcon(stats.range)}${attackIcon(stats.range, "mirror")}`
+    ? `${attackIcon(stats.range)}<span class="stat-value">${attack}</span>${attackIcon(stats.range, "mirror")}`
     : `<span class="stat-value">${attack}</span>${attackIcon(stats.range)}`;
   const defenseIcon = stats.persistent ? svgIcon("anchor") : svgIcon("shield");
   const defenseInner = `<span class="stat-value">${stats.defense}</span>${defenseIcon}`;
@@ -262,13 +263,13 @@ function unitToken(unit, preview = false) {
   ].filter(Boolean).join("");
   const terrain = (stats.terrainSpawn || tpl.terrainSpawn || []).map((kind) => kind.slice(0, 4).toUpperCase()).join(" ");
   return `
-    <div class="unit-token ${preview ? "preview-token" : ""} ${unit.team || "yellow"} ${unit.exhausted ? "exhausted" : ""} ${statusClass}">
+    <div class="unit-token ${preview ? "preview-token" : ""} ${unit.team || "yellow"} ${onGraveyard ? "on-graveyard" : ""} ${unit.exhausted ? "exhausted" : ""} ${statusClass}">
       <div class="cost-line">$${tpl.cost}/${tpl.rebate}</div>
       <div class="unit-name">${tpl.name}</div>
       <div class="speed-line">${stats.speed} ${speedIcon({ stats })}</div>
       <div class="ability-line">${ability}</div>
       <div class="terrain-line">${terrain}</div>
-      <div class="combat-line"><span>${atk}</span><span>${defense}</span></div>
+      <div class="combat-line ${stats.flurry ? "flurry-combat" : ""}"><span>${atk}</span><span>${defense}</span></div>
     </div>
   `;
 }

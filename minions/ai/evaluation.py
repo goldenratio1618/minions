@@ -25,6 +25,7 @@ class EvaluationWeights:
     own_necromancer_danger: float = 8.1
     damage: float = 3.4
     spawn_network: float = 4.7
+    activation: float = 0.35
 
 
 DEFAULT_WEIGHTS = EvaluationWeights()
@@ -63,6 +64,8 @@ def _board_team_score(game: Game, board, color: str, weights: EvaluationWeights)
         score += _graveyard_proximity(board, unit) * weights.graveyard_next
         if game.unit_stats(unit)["spawn"]:
             score += weights.spawn_network
+        if unit.moved and game.template(unit.template_id).minion:
+            score += weights.activation
         if enemy_necro:
             score += max(0, 7 - distance(Hex.from_key(unit.hex), Hex.from_key(enemy_necro.hex))) * weights.enemy_necromancer_pressure
         score -= unit.damage * weights.damage

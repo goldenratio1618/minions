@@ -57,6 +57,12 @@ class UnitGeneratorTests(unittest.TestCase):
                     candidate = abs(cost * cost - rebate * rebate - target)
                     self.assertGreaterEqual(candidate, current)
 
+    def test_generated_flurry_requires_meaningful_attack(self):
+        for seed in range(300):
+            unit = generate_random_unit(seed=seed)
+            if unit.attack == 1 or unit.attack == "*":
+                self.assertFalse(unit.flurry)
+
 
 class GameplayTests(unittest.TestCase):
     def test_create_game_and_end_turn_income(self):

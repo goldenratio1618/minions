@@ -37,6 +37,16 @@ class AITests(unittest.TestCase):
             if game.winner:
                 break
 
+    def test_blue_ai_moves_starting_units_after_opening_spawn(self):
+        for seed in (100, 102, 104):
+            game = create_game(board_count=1, seed=seed)
+            play_turn(game, "yellow", time_limit=3.0)
+
+            result = play_turn(game, "blue", time_limit=3.0)
+            moves = [action for action in result.actions if action["action"] == "move"]
+
+            self.assertGreaterEqual(len(moves), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
