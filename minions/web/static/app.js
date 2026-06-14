@@ -708,7 +708,10 @@ function updateHoverCard(key) {
   if (terrainByHex[key]) properties.push(state.game.terrainLabels[terrainByHex[key]]);
   if (!unit) {
     const terrain = terrainByHex[key];
-    card.innerHTML = `<div class="hover-hex-preview ${hexSurfaceClasses(key, lookups).join(" ")}"><span class="coord">${key}</span>${terrain ? terrainMarker(terrain) : ""}</div>`;
+    card.innerHTML = `
+      <div class="hover-props">${properties.map((property) => `<span>${property}</span>`).join("")}</div>
+      <div class="hover-hex-preview ${hexSurfaceClasses(key, lookups).join(" ")}"><span class="coord">${key}</span>${terrain ? terrainMarker(terrain) : ""}</div>
+    `;
     return;
   }
   card.innerHTML = `

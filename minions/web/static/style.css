@@ -664,6 +664,7 @@ p {
 
 .panel-reinforcements {
   grid-area: reinforcements;
+  align-self: stretch;
 }
 
 .panel-research {
@@ -676,6 +677,7 @@ p {
 
 .panel-hover {
   grid-area: hover;
+  align-self: stretch;
 }
 
 .panel-actions {
@@ -755,6 +757,67 @@ p {
   display: none;
 }
 
+.panel-reinforcements .compact-list {
+  align-content: start;
+}
+
+.panel-reinforcements .mini-card {
+  justify-items: start;
+}
+
+.panel-reinforcements .bench-unit {
+  width: 112px;
+  height: 98px;
+}
+
+.panel-reinforcements .unit-token {
+  inset: 0;
+  font-size: 0.78rem;
+}
+
+.panel-reinforcements .cost-line {
+  top: 8px;
+  left: 30px;
+  right: 30px;
+  font-size: 0.88rem;
+}
+
+.panel-reinforcements .speed-line {
+  top: 42px;
+  left: 9px;
+  width: 31px;
+  font-size: 0.78rem;
+}
+
+.panel-reinforcements .ability-line {
+  top: 34px;
+  right: 8px;
+  width: 32px;
+  height: 34px;
+  font-size: 0.78rem;
+}
+
+.panel-reinforcements .terrain-line {
+  left: 26px;
+  right: 26px;
+  bottom: 31px;
+  font-size: 0.58rem;
+}
+
+.panel-reinforcements .combat-line {
+  left: 28px;
+  right: 28px;
+  bottom: 16px;
+  font-size: 0.88rem;
+}
+
+.panel-reinforcements .combat-line.flurry-combat {
+  left: 22px;
+  right: 22px;
+  bottom: 16px;
+  font-size: 0.78rem;
+}
+
 .drag-ghost {
   position: fixed;
   width: 80px;
@@ -792,7 +855,7 @@ p {
 }
 
 .hover-card {
-  height: 252px;
+  min-height: 252px;
   overflow: hidden;
   align-content: start;
 }
@@ -817,7 +880,7 @@ p {
   position: relative;
   width: 190px;
   height: 166px;
-  margin: auto;
+  margin: 8px auto 0;
   clip-path: var(--hex-shape);
   --hex-fill: #d7b87c;
   --hex-border: rgba(54, 42, 30, 0.32);
