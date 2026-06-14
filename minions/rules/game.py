@@ -202,7 +202,7 @@ def create_game(board_count: int, seed: Optional[int] = None) -> Game:
     return game
 
 
-def _snapshot(game: Game) -> dict:
+def _snapshot(game: Game, turn_history: Optional[List[TurnAction]] = None) -> dict:
     return {
         "boards": copy.deepcopy(game.boards),
         "teams": copy.deepcopy(game.teams),
@@ -213,19 +213,12 @@ def _snapshot(game: Game) -> dict:
         "turn_number": game.turn_number,
         "unit_catalog": copy.deepcopy(game.unit_catalog),
         "log": copy.deepcopy(game.log),
-        "turn_history": _snapshot_turn_history(game.turn_history),
+        "turn_history": copy.deepcopy(turn_history) if turn_history is not None else None,
         "next_action_id": game.next_action_id,
     }
 
 
-def _snapshot_turn_history(turn_history: List[TurnAction]) -> List[TurnAction]:
-    history = copy.deepcopy(turn_history)
-    for action in history:
-        action.before = None
-    return history
-
-
-def _restore_snapshot(game: Game, snapshot: dict) -> None:
+def _restore_snapshot(game: Game, snapshot: dict, turn_history: Optional[List[TurnAction]] = None) -> None:
     game.boards = copy.deepcopy(snapshot["boards"])
     game.teams = copy.deepcopy(snapshot["teams"])
     game.turn = snapshot["turn"]
@@ -235,7 +228,12 @@ def _restore_snapshot(game: Game, snapshot: dict) -> None:
     game.turn_number = snapshot["turn_number"]
     game.unit_catalog = copy.deepcopy(snapshot["unit_catalog"])
     game.log = copy.deepcopy(snapshot["log"])
-    game.turn_history = copy.deepcopy(snapshot["turn_history"])
+    if turn_history is not None:
+        game.turn_history = copy.deepcopy(turn_history)
+    elif snapshot["turn_history"] is not None:
+        game.turn_history = copy.deepcopy(snapshot["turn_history"])
+    else:
+        game.turn_history = []
     game.next_action_id = snapshot["next_action_id"]
 
 
@@ -277,7 +275,7 @@ def undo_unit_action(game: Game, color: str, board_index: int, unit_id: str) -> 
     for action_index in range(len(game.turn_history) - 1, -1, -1):
         action = game.turn_history[action_index]
         if action.board == board_index and unit_id in action.unit_ids and action.before is not None:
-            redo_snapshot = _snapshot(game)
+            redo_snapshot = _snapshot(game, game.turn_history)
             redo_label = action.summary
             skipped = _replay_without_turn_action(game, action_index)
             _prune_unsupported_spawn_dependencies(game, color)
@@ -305,8 +303,9 @@ def redo_turn_action(game: Game, color: str) -> None:
 
 def _replay_without_turn_action(game: Game, action_index: int) -> int:
     target = game.turn_history[action_index]
+    previous = copy.deepcopy(game.turn_history[:action_index])
     subsequent = copy.deepcopy(game.turn_history[action_index + 1 :])
-    _restore_snapshot(game, target.before)
+    _restore_snapshot(game, target.before, previous)
     skipped = 0
     for later_action in subsequent:
         if not later_action.action_name or later_action.color is None:
