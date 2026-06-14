@@ -6,9 +6,14 @@
   --line: #d6c4a7;
   --yellow: #ffd447;
   --blue: #52a7ff;
-  --grave: #898071;
+  --grave: #050505;
   --water: #7cc8d8;
   --danger: #d64f3f;
+  --good: #268b4a;
+  --terrain-firestorm: #a74432;
+  --terrain-earthquake: #f3df91;
+  --terrain-flood: #1f6fb2;
+  --terrain-whirlwind: #d8dde1;
   --hex-shape: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
 }
 
@@ -213,21 +218,30 @@ p {
 }
 
 .map-wrap {
-  min-height: 620px;
+  height: clamp(520px, calc(100vh - 250px), 760px);
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ecd9b8;
+  cursor: grab;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+
+.map-wrap.panning {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .hex-map {
   position: relative;
-  width: max-content;
-  height: max-content;
+  min-width: 100%;
+  min-height: 100%;
 }
 
 .hex-map-inner {
   position: relative;
+  transform-origin: 0 0;
 }
 
 .path-overlay {
@@ -303,6 +317,26 @@ p {
   color: white;
 }
 
+.hex.terrain-firestorm {
+  --hex-fill: var(--terrain-firestorm);
+  color: #fff6ec;
+}
+
+.hex.terrain-earthquake {
+  --hex-fill: var(--terrain-earthquake);
+  color: #31281b;
+}
+
+.hex.terrain-flood {
+  --hex-fill: var(--terrain-flood);
+  color: #edf8ff;
+}
+
+.hex.terrain-whirlwind {
+  --hex-fill: var(--terrain-whirlwind);
+  color: #26313a;
+}
+
 .hex.spawn-yellow {
   --hex-border: rgba(255, 212, 71, 0.95);
   --hex-border-width: 4px;
@@ -351,6 +385,31 @@ p {
   letter-spacing: 0.04em;
 }
 
+.terrain-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  z-index: 2;
+  font-size: 1.35rem;
+  font-weight: 950;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(255, 250, 240, 0.4);
+}
+
+.terrain-mark .unit-icon {
+  width: 1.12em;
+  height: 1.12em;
+}
+
+.terrain-flood-mark .unit-icon,
+.terrain-whirlwind-mark .unit-icon {
+  width: 1.85em;
+  height: 1.85em;
+}
+
 .unit-token {
   position: absolute;
   inset: 4px;
@@ -359,7 +418,7 @@ p {
   --unit-border: #2d2118;
   background: transparent;
   border: 0;
-  z-index: 2;
+  z-index: 3;
   font-size: 0.65rem;
   line-height: 1;
   overflow: hidden;
@@ -541,6 +600,15 @@ p {
   text-align: center;
 }
 
+.adjusted-stat,
+.health-damaged {
+  color: #c92424;
+}
+
+.health-boosted {
+  color: var(--good);
+}
+
 .unit-icon {
   width: 1.08em;
   height: 1.08em;
@@ -589,6 +657,19 @@ p {
 .compact-list {
   display: grid;
   gap: 7px;
+}
+
+.scroll-list {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.spells-scroll {
+  max-height: 260px;
+}
+
+.actions-scroll {
+  max-height: 220px;
 }
 
 .mini-card {
@@ -886,6 +967,6 @@ pre {
   }
 
   .map-wrap {
-    min-height: 520px;
+    height: clamp(460px, calc(100vh - 210px), 640px);
   }
 }

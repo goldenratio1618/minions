@@ -4,6 +4,7 @@ from minions.rules.constants import Phase, Terrain
 from minions.rules.coords import Hex, distance, neighbors, reflect_necromancer_axis
 from minions.rules.game import apply_action, can_enter, create_game, end_turn, is_unit_spawn_destination, move_unit, research_unit, set_phase, unit_on_hex
 from minions.rules.maps import generate_map
+from minions.rules.spells import make_card
 from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, UnitInstance, attack_for_power, generate_random_unit, predicted_expression
 
 
@@ -19,8 +20,8 @@ class MapGeneratorTests(unittest.TestCase):
             self.assertGreaterEqual(board_map.graveyards_near_spawns(), 2)
             self.assertTrue(board_map.graveyards_are_separated())
             self.assertTrue(board_map.graveyards_connect_to_necromancers())
-            self.assertEqual(board_map.spawn_centers["yellow"].to_key(), "1,8")
-            self.assertEqual(board_map.spawn_centers["blue"].to_key(), "8,1")
+            self.assertEqual(board_map.spawn_centers["yellow"].to_key(), "2,7")
+            self.assertEqual(board_map.spawn_centers["blue"].to_key(), "7,2")
             self.assertLessEqual(len(board_map.water), 10)
             self.assertEqual(reflect_necromancer_axis(board_map.spawn_centers["yellow"]), board_map.spawn_centers["blue"])
 
@@ -72,13 +73,51 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(game.teams["blue"].souls, 8)
         self.assertEqual(game.boards[0].reinforcements["yellow"], ["zombie"])
         self.assertEqual(game.boards[0].reinforcements["blue"], ["zombie"])
-        self.assertEqual(len(game.teams["yellow"].hand), 2)
-        self.assertEqual(len(game.teams["blue"].hand), 0)
+        self.assertEqual([len(board.spells["yellow"]) for board in game.boards], [1, 1])
+        self.assertEqual([len(board.spells["blue"]) for board in game.boards], [0, 0])
         end_turn(game, "yellow")
         self.assertEqual(game.turn, "blue")
         self.assertEqual(game.phase, Phase.SPAWN.value)
-        self.assertEqual(len(game.teams["blue"].hand), 2)
+        self.assertEqual([len(board.spells["blue"]) for board in game.boards], [1, 1])
         self.assertGreaterEqual(game.teams["yellow"].souls, 6)
+
+    def test_board_spell_hands_are_separate(self):
+        game = create_game(board_count=2, seed=3)
+        card_0 = make_card("fester")
+        card_1 = make_card("fester")
+        game.boards[0].spells["yellow"] = [card_0]
+        game.boards[1].spells["yellow"] = [card_1]
+
+        apply_action(game, "yellow", "discard_spell", {"board": 0, "cardId": card_0["cardId"]})
+
+        self.assertEqual(game.boards[0].spells["yellow"], [])
+        self.assertEqual(game.boards[1].spells["yellow"], [card_1])
+        self.assertEqual(game.teams["yellow"].mana, 1)
+
+    def test_flurry_default_spends_only_target_remaining_health(self):
+        game = create_game(board_count=1, seed=24)
+        board = game.boards[0]
+        board.units.clear()
+        board.map.water.clear()
+        board.map.graveyards.clear()
+        board.terrain = {terrain.value: None for terrain in Terrain}
+        wight = next(unit for unit in EXISTING_UNITS if unit.id == "wight")
+        game.unit_catalog[wight.id] = wight
+        board.units = {
+            "wight": UnitInstance("wight", wight.id, "yellow", "5,5"),
+            "zombie_1": UnitInstance("zombie_1", "zombie", "blue", "6,5"),
+            "zombie_2": UnitInstance("zombie_2", "zombie", "blue", "5,6"),
+        }
+        set_phase(game, "yellow", "movement")
+
+        apply_action(game, "yellow", "attack", {"board": 0, "attackerId": "wight", "targetId": "zombie_1"})
+        self.assertNotIn("zombie_1", board.units)
+        self.assertEqual(board.units["wight"].flurry_remaining, 4)
+        self.assertTrue(board.units["wight"].attacked)
+
+        apply_action(game, "yellow", "attack", {"board": 0, "attackerId": "wight", "targetId": "zombie_2"})
+        self.assertNotIn("zombie_2", board.units)
+        self.assertEqual(board.units["wight"].flurry_remaining, 3)
 
     def test_resign_board_scores_now_and_resets_on_opponent_turn(self):
         game = create_game(board_count=2, seed=19)
@@ -237,6 +276,7 @@ class GameplayTests(unittest.TestCase):
         end_turn(game, "yellow")
         board.units.clear()
         board.map.water.clear()
+        board.map.graveyards.clear()
         ghost = next(unit for unit in EXISTING_UNITS if unit.id == "ghost")
         game.unit_catalog[ghost.id] = ghost
         board.units["ghost"] = UnitInstance("ghost", ghost.id, "blue", "5,5")
@@ -371,6 +411,7 @@ class GameplayTests(unittest.TestCase):
         end_turn(game, "yellow")
         board.units.clear()
         board.map.water.clear()
+        board.map.graveyards.clear()
         ghost = next(unit for unit in EXISTING_UNITS if unit.id == "ghost")
         game.unit_catalog[ghost.id] = ghost
         board.units["ghost"] = UnitInstance("ghost", ghost.id, "blue", "5,5")

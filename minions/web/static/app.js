@@ -10,6 +10,8 @@ const state = {
   terrainSpawnSource: null,
   drag: null,
   dragGhost: null,
+  mapPan: null,
+  mapZoom: Math.min(2.4, Math.max(0.55, Number(localStorage.getItem("minions-map-zoom")) || 1)),
   pathPreview: [],
   suppressClick: false,
   terrain: "firestorm",
@@ -243,6 +245,31 @@ function speedIcon(unit) {
   return parts.join("");
 }
 
+function isNumericAttack(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function currentHealth(unit) {
+  const stats = unit.stats || unit;
+  const defense = Number(stats.defense);
+  if (!Number.isFinite(defense)) return stats.defense;
+  return Math.max(0, defense - Number(unit.damage || 0));
+}
+
+function healthClass(unit) {
+  const tpl = unit.template || unit;
+  const base = Number(tpl.defense);
+  const health = Number(currentHealth(unit));
+  if (!Number.isFinite(base) || !Number.isFinite(health) || health === base) return "";
+  return health < base ? "health-damaged" : "health-boosted";
+}
+
+function flurryAttackValue(unit, stats, attack) {
+  if (!stats.flurry || !isNumericAttack(attack)) return { value: attack, adjusted: false };
+  if (unit.flurryRemaining === null || unit.flurryRemaining === undefined) return { value: attack, adjusted: false };
+  return { value: unit.flurryRemaining, adjusted: unit.flurryRemaining !== attack };
+}
+
 function unitToken(unit, preview = false) {
   const tpl = unit.template || unit;
   const stats = unit.stats || unit;
@@ -263,11 +290,13 @@ function unitToken(unit, preview = false) {
           : "state-ready"
     : "";
   const attack = stats.attack !== undefined ? stats.attack : tpl.attack;
+  const flurryAttack = flurryAttackValue(unit, stats, attack);
+  const attackClass = flurryAttack.adjusted ? " adjusted-stat" : "";
   const atk = stats.flurry
-    ? `${attackIcon(stats.range)}<span class="stat-value">${attack}</span>${attackIcon(stats.range, "mirror")}`
-    : `<span class="stat-value">${attack}</span>${attackIcon(stats.range)}`;
+    ? `${attackIcon(stats.range)}<span class="stat-value${attackClass}">${flurryAttack.value}</span>${attackIcon(stats.range, "mirror")}`
+    : `<span class="stat-value">${flurryAttack.value}</span>${attackIcon(stats.range)}`;
   const defenseIcon = stats.persistent ? svgIcon("anchor") : svgIcon("shield");
-  const defenseInner = `<span class="stat-value">${stats.defense}</span>${defenseIcon}`;
+  const defenseInner = `<span class="stat-value health-value ${healthClass(unit)}">${currentHealth(unit)}</span>${defenseIcon}`;
   const defense = stats.ward ? `<span class="warded">${defenseInner}</span>` : defenseInner;
   const ability = [
     stats.spawn ? "⬡→⬡" : "",
@@ -359,7 +388,7 @@ function renderGame() {
           <button ${!active ? "disabled" : ""} onclick="action('end_turn')">End Turn</button>
           <span class="action-hint">${state.vsAI && state.game.turn === state.aiColor ? "The AI is taking its turn." : "Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation."}</span>
         </div>
-        <div class="map-wrap"><div class="hex-map">${renderMap(currentBoard)}</div></div>
+        <div class="map-wrap" data-map-wrap>${renderMap(currentBoard)}</div>
       </div>
       <aside class="side-panel">
         <section class="side-section">
@@ -384,11 +413,11 @@ function renderGame() {
         </section>
         <section class="side-section">
           <h3>Spells</h3>
-          <div class="compact-list">${renderHand()}</div>
+          <div class="compact-list scroll-list spells-scroll">${renderHand(currentBoard)}</div>
         </section>
         <section class="side-section">
           <h3>Turn Actions</h3>
-          <div class="compact-list">${renderTurnHistory()}</div>
+          <div class="compact-list scroll-list actions-scroll">${renderTurnHistory()}</div>
         </section>
         <section class="side-section">
           <h3>Log</h3>
@@ -401,6 +430,8 @@ function renderGame() {
     button.addEventListener("click", () => {
       state.board = Number(button.dataset.board);
       state.selectedUnit = null;
+      state.selectedCard = null;
+      state.spellTarget = null;
       state.pathPreview = [];
       renderGame();
     });
@@ -410,12 +441,15 @@ function renderGame() {
   });
   const terrainSelect = $("terrain-select");
   if (terrainSelect) terrainSelect.addEventListener("change", (event) => (state.terrain = event.target.value));
+  wireMapInteractions();
 }
 
 function renderSelectedUnit(unit) {
+  const health = currentHealth(unit);
+  const baseHealth = unit.template.defense;
   return `
     <strong>${unit.template.name}</strong>
-    <div>${unit.team} at ${unit.hex}; damage ${unit.damage}/${unit.stats.defense}${unit.exhausted ? "; exhausted" : ""}</div>
+    <div>${unit.team} at ${unit.hex}; health ${health}/${baseHealth}${unit.exhausted ? "; exhausted" : ""}</div>
     <div class="mini-actions">
       <button onclick="setMode('move')">Move</button>
       <button onclick="setMode('attack')">Attack</button>
@@ -435,6 +469,21 @@ function findTemplate(templateId) {
   return null;
 }
 
+function mapDimensions(zoom = state.mapZoom) {
+  return {
+    width: BOARD_METRICS.width * zoom,
+    height: BOARD_METRICS.height * zoom,
+  };
+}
+
+function terrainMarker(kind) {
+  if (kind === "firestorm") return `<span class="terrain-mark terrain-firestorm-mark"><span>4</span>${svgIcon("shield")}</span>`;
+  if (kind === "earthquake") return `<span class="terrain-mark terrain-earthquake-mark"><span>2</span>${svgIcon("footprints")}</span>`;
+  if (kind === "flood") return `<span class="terrain-mark terrain-flood-mark">${svgIcon("wings")}</span>`;
+  if (kind === "whirlwind") return `<span class="terrain-mark terrain-whirlwind-mark">${svgIcon("anchor")}</span>`;
+  return "";
+}
+
 function renderMap(b) {
   const water = new Set(b.map.water);
   const graves = new Set(b.map.graveyards);
@@ -450,18 +499,19 @@ function renderMap(b) {
       const key = hexKey(q, r);
       const { x, y } = hexPosition(q, r);
       const unit = unitAt(key);
+      const terrain = terrainByHex[key];
       const classes = [
         "hex",
         water.has(key) ? "water" : "",
         graves.has(key) ? "graveyard" : "",
+        terrain ? `terrain-${terrain}` : "",
         spawnClass[key] || "",
         state.selectedUnit && unit && unit.id === state.selectedUnit ? "selected" : "",
       ].join(" ");
       html += `
         <button class="${classes}" style="left:${x}px; top:${y}px" data-key="${key}" data-q="${q}" data-r="${r}" data-unit="${unit ? unit.id : ""}">
           <span class="coord">${key}</span>
-          ${graves.has(key) ? '<span class="grave-mark">GY</span>' : ""}
-          ${terrainByHex[key] ? `<span class="terrain-chip">${terrainByHex[key].slice(0, 5).toUpperCase()}</span>` : ""}
+          ${terrain ? terrainMarker(terrain) : ""}
           ${unit ? unitToken(unit) : ""}
         </button>
       `;
@@ -478,7 +528,63 @@ function renderMap(b) {
       hex.addEventListener("focus", () => updateHoverCard(hex.dataset.key));
     });
   }, 0);
-  return `<div class="hex-map-inner" style="width:${BOARD_METRICS.width}px; height:${BOARD_METRICS.height}px">${html}</div>`;
+  const dimensions = mapDimensions();
+  return `<div class="hex-map" style="width:${dimensions.width}px; height:${dimensions.height}px"><div class="hex-map-inner" style="width:${BOARD_METRICS.width}px; height:${BOARD_METRICS.height}px; transform:scale(${state.mapZoom})">${html}</div></div>`;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function applyMapZoom(wrap, nextZoom, clientX, clientY) {
+  const previousZoom = state.mapZoom;
+  const zoom = clamp(nextZoom, 0.55, 2.4);
+  if (Math.abs(zoom - previousZoom) < 0.001) return;
+  const rect = wrap.getBoundingClientRect();
+  const offsetX = clientX - rect.left;
+  const offsetY = clientY - rect.top;
+  const anchorX = (wrap.scrollLeft + offsetX) / previousZoom;
+  const anchorY = (wrap.scrollTop + offsetY) / previousZoom;
+  state.mapZoom = zoom;
+  localStorage.setItem("minions-map-zoom", String(zoom));
+  const dimensions = mapDimensions(zoom);
+  const map = wrap.querySelector(".hex-map");
+  const inner = wrap.querySelector(".hex-map-inner");
+  if (map) {
+    map.style.width = `${dimensions.width}px`;
+    map.style.height = `${dimensions.height}px`;
+  }
+  if (inner) inner.style.transform = `scale(${zoom})`;
+  wrap.scrollLeft = anchorX * zoom - offsetX;
+  wrap.scrollTop = anchorY * zoom - offsetY;
+}
+
+function handleMapWheel(event) {
+  event.preventDefault();
+  const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+  applyMapZoom(event.currentTarget, state.mapZoom * factor, event.clientX, event.clientY);
+}
+
+function handleMapPointerDown(event) {
+  if (event.button !== 0 || state.drag || !event.currentTarget.contains(event.target)) return;
+  if (event.target.closest(".unit-token")) return;
+  state.mapPan = {
+    wrap: event.currentTarget,
+    startX: event.clientX,
+    startY: event.clientY,
+    scrollLeft: event.currentTarget.scrollLeft,
+    scrollTop: event.currentTarget.scrollTop,
+    moved: false,
+  };
+}
+
+function wireMapInteractions() {
+  document.querySelectorAll(".map-wrap[data-map-wrap]").forEach((wrap) => {
+    if (wrap.dataset.mapWired) return;
+    wrap.dataset.mapWired = "true";
+    wrap.addEventListener("wheel", handleMapWheel, { passive: false });
+    wrap.addEventListener("pointerdown", handleMapPointerDown);
+  });
 }
 
 function renderPathOverlay() {
@@ -595,7 +701,7 @@ function updateHoverCard(key) {
     <div class="hover-props">${properties.map((property) => `<span>${property}</span>`).join("")}</div>
     ${
       unit
-        ? `<div class="hover-unit-name">${unit.template.name}</div><div class="hover-unit-preview">${unitToken(unit, true)}</div><div class="hover-unit-stats">${unit.team}; ${unit.stats.speed} speed, ${unit.stats.range} range, ${unit.stats.attack}/${unit.stats.defense}${unit.exhausted ? "; exhausted" : ""}</div>`
+        ? `<div class="hover-unit-name">${unit.template.name}</div><div class="hover-unit-preview">${unitToken(unit, true)}</div><div class="hover-unit-stats">${unit.team}; ${unit.stats.speed} speed, ${unit.stats.range} range, ${unit.stats.attack}/${currentHealth(unit)} health${unit.exhausted ? "; exhausted" : ""}</div>`
         : '<div class="hover-empty">No unit on this tile.</div>'
     }
   `;
@@ -674,6 +780,7 @@ function handleHexContextMenu(event, unitId) {
 
 function handleHexPointerDown(event, q, r, unitId) {
   if (event.button !== 0 || !unitId || state.game.turn !== state.color || state.selectedCard) return;
+  if (!event.target.closest(".unit-token")) return;
   const unit = unitById(unitId);
   if (!unit || unit.team !== state.color) return;
   state.drag = {
@@ -712,6 +819,26 @@ function dropZoneUnderPointer(event) {
   return element ? element.closest("[data-drop-zone]") : null;
 }
 
+function flurryRemaining(unit) {
+  const attack = unit && unit.stats ? unit.stats.attack : null;
+  if (!unit || !unit.stats.flurry || !isNumericAttack(attack)) return null;
+  return unit.flurryRemaining === null || unit.flurryRemaining === undefined ? attack : unit.flurryRemaining;
+}
+
+function promptFlurryDamage(attacker, target) {
+  const remaining = flurryRemaining(attacker);
+  if (!remaining || remaining <= 0) return null;
+  const suggested = Math.max(1, Math.min(remaining, Number(currentHealth(target)) || remaining));
+  const answer = window.prompt(`Enter the amount of flurry damage to deal, up to ${remaining}.`, String(suggested));
+  if (answer === null) return null;
+  const amount = Number(answer);
+  if (!Number.isInteger(amount) || amount <= 0 || amount > remaining) {
+    notice(`Enter a whole number from 1 to ${remaining}.`);
+    return null;
+  }
+  return amount;
+}
+
 function createDragGhost(html, clientX, clientY) {
   removeDragGhost();
   const ghost = document.createElement("div");
@@ -736,6 +863,19 @@ function removeDragGhost() {
 }
 
 function handlePointerMove(event) {
+  if (state.mapPan) {
+    const pan = state.mapPan;
+    const dx = event.clientX - pan.startX;
+    const dy = event.clientY - pan.startY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pan.moved = true;
+    if (pan.moved) {
+      pan.wrap.classList.add("panning");
+      pan.wrap.scrollLeft = pan.scrollLeft - dx;
+      pan.wrap.scrollTop = pan.scrollTop - dy;
+      event.preventDefault();
+    }
+    return;
+  }
   if (!state.drag || !state.game) return;
   moveDragGhost(event.clientX, event.clientY);
   const hex = hexElementUnderPointer(event);
@@ -757,6 +897,18 @@ function handlePointerMove(event) {
 }
 
 function handlePointerUp(event) {
+  if (state.mapPan) {
+    const panned = state.mapPan.moved;
+    state.mapPan.wrap.classList.remove("panning");
+    state.mapPan = null;
+    if (panned) {
+      state.suppressClick = true;
+      setTimeout(() => {
+        state.suppressClick = false;
+      }, 0);
+    }
+    return;
+  }
   if (!state.drag || !state.game) return;
   const drag = state.drag;
   state.drag = null;
@@ -786,8 +938,12 @@ function handlePointerUp(event) {
     if (unitId && unitId !== drag.unitId) {
       const target = unitById(unitId);
       if (target && target.team !== unit.team) {
+        const amount = event.altKey && flurryRemaining(unit) ? promptFlurryDamage(unit, target) : null;
+        if (event.altKey && flurryRemaining(unit) && amount === null) return;
+        const payload = { board: state.board, attackerId: drag.unitId, targetId: unitId };
+        if (amount !== null) payload.amount = amount;
         state.suppressClick = true;
-        action("attack", { board: state.board, attackerId: drag.unitId, targetId: unitId });
+        action("attack", payload);
       }
     } else if (hex.dataset.key !== drag.startKey) {
       state.suppressClick = true;
@@ -833,8 +989,8 @@ function renderResearch() {
   `).join("");
 }
 
-function renderHand() {
-  const hand = team().hand || [];
+function renderHand(b = board()) {
+  const hand = (b.spells && b.spells[state.color]) || [];
   if (!hand.length) return '<div class="mini-card">No spells in hand.</div>';
   return hand.map((card) => `
     <div class="mini-card">
@@ -861,7 +1017,8 @@ function renderTurnHistory() {
 }
 
 function selectCardById(cardId, discard) {
-  const card = (team().hand || []).find((candidate) => candidate.cardId === cardId);
+  const hand = (board().spells && board().spells[state.color]) || [];
+  const card = hand.find((candidate) => candidate.cardId === cardId);
   if (card) selectCard(card, discard);
 }
 
@@ -871,7 +1028,7 @@ function selectCard(card, discard) {
   state.mode = "spell";
   notice(discard && !card.cantrip ? "Discarding for mana." : `Select a target for ${card.name}.`, true);
   if (discard && !card.cantrip) {
-    action("discard_spell", { cardId: card.cardId });
+    action("discard_spell", { board: state.board, cardId: card.cardId });
   } else {
     renderGame();
   }
@@ -932,7 +1089,7 @@ function renderGeneratedMap(map) {
   const oldBoard = state.board;
   state.game = { boards: [fakeBoard], terrainLabels: map.terrainLabels };
   state.board = 0;
-  const html = `<div class="map-wrap"><div class="hex-map">${renderMap(fakeBoard)}</div></div><pre>${JSON.stringify(map, null, 2)}</pre>`;
+  const html = `<div class="map-wrap" data-map-wrap>${renderMap(fakeBoard)}</div><pre>${JSON.stringify(map, null, 2)}</pre>`;
   state.game = oldGame;
   state.board = oldBoard;
   return html;
@@ -1020,6 +1177,7 @@ $("generate-map").addEventListener("click", async () => {
   try {
     const data = await api("/api/generators/map");
     $("map-lab").innerHTML = renderGeneratedMap(data.map);
+    wireMapInteractions();
     notice("Generated map.", true);
   } catch (err) {
     notice(err.message);

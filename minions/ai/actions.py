@@ -299,106 +299,107 @@ def _spell_candidates(game: Game, color: str, categories: Optional[Set[str]]) ->
     if not (_wants(categories, "spell") or _wants(categories, "discard")):
         return []
     candidates: List[ActionCandidate] = []
-    for card in list(game.teams[color].hand):
-        spell = SPELLS[card["spellId"]]
-        if spell.spawn_phase_only and game.phase != Phase.SPAWN.value:
-            continue
-        if _wants(categories, "discard") and not spell.cantrip:
-            candidates.append(
-                ActionCandidate(
-                    "discard_spell",
-                    {"cardId": card["cardId"]},
-                    "discard",
-                    description=f"discard {spell.name}",
-                )
-            )
-        payloads = _spell_payloads(game, color, card)
-        if _wants(categories, "spell"):
-            for payload in payloads:
-                candidates.append(
-                    ActionCandidate(
-                        "cast_spell",
-                        payload,
-                        "spell",
-                        int(payload.get("board", 0)),
-                        f"cast {spell.name}",
-                    )
-                )
-        if _wants(categories, "discard") and spell.cantrip:
-            for payload in payloads:
+    for board in game.boards:
+        for card in list(board.spells[color]):
+            spell = SPELLS[card["spellId"]]
+            if spell.spawn_phase_only and game.phase != Phase.SPAWN.value:
+                continue
+            if _wants(categories, "discard") and not spell.cantrip:
                 candidates.append(
                     ActionCandidate(
                         "discard_spell",
-                        payload,
+                        {"board": board.index, "cardId": card["cardId"]},
                         "discard",
-                        int(payload.get("board", 0)),
-                        f"discard/cantrip {spell.name}",
+                        board.index,
+                        f"discard {spell.name}",
                     )
                 )
+            payloads = _spell_payloads(game, color, board, card)
+            if _wants(categories, "spell"):
+                for payload in payloads:
+                    candidates.append(
+                        ActionCandidate(
+                            "cast_spell",
+                            payload,
+                            "spell",
+                            board.index,
+                            f"cast {spell.name}",
+                        )
+                    )
+            if _wants(categories, "discard") and spell.cantrip:
+                for payload in payloads:
+                    candidates.append(
+                        ActionCandidate(
+                            "discard_spell",
+                            payload,
+                            "discard",
+                            board.index,
+                            f"discard/cantrip {spell.name}",
+                        )
+                    )
     return candidates
 
 
-def _spell_payloads(game: Game, color: str, card: dict) -> List[dict]:
+def _spell_payloads(game: Game, color: str, board, card: dict) -> List[dict]:
     spell_id = card["spellId"]
     payloads: List[dict] = []
-    for board in game.boards:
-        friendly = _friendly_units(board, color)
-        enemies = _enemy_units(board, color)
-        friendly_minions = [unit for unit in friendly if _is_minion(game, unit)]
-        enemy_minions = [unit for unit in enemies if _is_minion(game, unit)]
-        damaged_enemy_minions = [unit for unit in enemy_minions if unit.damage > 0]
+    friendly = _friendly_units(board, color)
+    enemies = _enemy_units(board, color)
+    friendly_minions = [unit for unit in friendly if _is_minion(game, unit)]
+    enemy_minions = [unit for unit in enemies if _is_minion(game, unit)]
+    damaged_enemy_minions = [unit for unit in enemy_minions if unit.damage > 0]
 
-        def base(**items):
-            return {"board": board.index, "cardId": card["cardId"], **items}
+    def base(**items):
+        return {"board": board.index, "cardId": card["cardId"], **items}
 
-        if spell_id in ("fester", "unsummon", "dismember"):
-            payloads.extend(base(targetId=target.id) for target in damaged_enemy_minions)
-        elif spell_id in ("stumble", "double_stumble"):
-            max_distance = 2 if spell_id == "double_stumble" else 1
-            for target in damaged_enemy_minions:
-                for destination in _hexes_within(Hex.from_key(target.hex), max_distance):
-                    if destination.to_key() == target.hex:
-                        continue
-                    payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
-        elif spell_id in ("shield", "persistent", "critical_hit", "spawn"):
-            payloads.extend(base(targetId=target.id) for target in friendly_minions)
-        elif spell_id == "reposition":
-            for target in friendly_minions:
-                for destination in neighbors(Hex.from_key(target.hex)):
-                    payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
-        elif spell_id in ("weaken", "freeze_ray", "lumbering", "shackle"):
-            payloads.extend(base(targetId=target.id) for target in enemy_minions)
-        elif spell_id == "blink":
-            payloads.extend(base(targetId=target.id) for target in friendly_minions)
-        elif spell_id in ("firestorm", "earthquake", "flood", "whirlwind"):
-            for target in friendly:
-                for destination in neighbors(Hex.from_key(target.hex)):
-                    payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
-        elif spell_id == "terraform":
-            for target in friendly:
-                for terrain in TERRAIN_LABELS:
-                    for destination in neighbors(Hex.from_key(target.hex)):
-                        payloads.append(base(targetId=target.id, terrain=terrain, q=destination.q, r=destination.r))
-        elif spell_id == "normalize":
-            for terrain, hex_key in board.terrain.items():
-                if not hex_key:
+    if spell_id in ("fester", "unsummon", "dismember"):
+        payloads.extend(base(targetId=target.id) for target in damaged_enemy_minions)
+    elif spell_id in ("stumble", "double_stumble"):
+        max_distance = 2 if spell_id == "double_stumble" else 1
+        for target in damaged_enemy_minions:
+            for destination in _hexes_within(Hex.from_key(target.hex), max_distance):
+                if destination.to_key() == target.hex:
                     continue
-                hex_ = Hex.from_key(hex_key)
-                payloads.append(base(terrain=terrain, q=hex_.q, r=hex_.r))
-            for hex_ in all_hexes():
-                terrain = terrain_on_hex(board, hex_.to_key())
-                if terrain:
-                    payloads.append(base(terrain=terrain, q=hex_.q, r=hex_.r))
-        elif spell_id == "lesser_spawn":
-            reinforcement_ids = sorted(set(board.reinforcements[color]))
-            for target in friendly_minions:
-                for template_id in reinforcement_ids:
-                    for destination in neighbors(Hex.from_key(target.hex)):
-                        payloads.append(base(targetId=target.id, templateId=template_id, q=destination.q, r=destination.r))
-        elif spell_id == "raise_zombie":
-            for target in friendly_minions:
+                payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
+    elif spell_id in ("shield", "persistent", "critical_hit", "spawn"):
+        payloads.extend(base(targetId=target.id) for target in friendly_minions)
+    elif spell_id == "reposition":
+        for target in friendly_minions:
+            for destination in neighbors(Hex.from_key(target.hex)):
+                payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
+    elif spell_id in ("weaken", "freeze_ray", "lumbering", "shackle"):
+        payloads.extend(base(targetId=target.id) for target in enemy_minions)
+    elif spell_id == "blink":
+        payloads.extend(base(targetId=target.id) for target in friendly_minions)
+    elif spell_id in ("firestorm", "earthquake", "flood", "whirlwind"):
+        for target in friendly:
+            for destination in neighbors(Hex.from_key(target.hex)):
+                payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
+    elif spell_id == "terraform":
+        for target in friendly:
+            for terrain in TERRAIN_LABELS:
                 for destination in neighbors(Hex.from_key(target.hex)):
-                    payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
+                    payloads.append(base(targetId=target.id, terrain=terrain, q=destination.q, r=destination.r))
+    elif spell_id == "normalize":
+        for terrain, hex_key in board.terrain.items():
+            if not hex_key:
+                continue
+            hex_ = Hex.from_key(hex_key)
+            payloads.append(base(terrain=terrain, q=hex_.q, r=hex_.r))
+        for hex_ in all_hexes():
+            terrain = terrain_on_hex(board, hex_.to_key())
+            if terrain:
+                payloads.append(base(terrain=terrain, q=hex_.q, r=hex_.r))
+    elif spell_id == "lesser_spawn":
+        reinforcement_ids = sorted(set(board.reinforcements[color]))
+        for target in friendly_minions:
+            for template_id in reinforcement_ids:
+                for destination in neighbors(Hex.from_key(target.hex)):
+                    payloads.append(base(targetId=target.id, templateId=template_id, q=destination.q, r=destination.r))
+    elif spell_id == "raise_zombie":
+        for target in friendly_minions:
+            for destination in neighbors(Hex.from_key(target.hex)):
+                payloads.append(base(targetId=target.id, q=destination.q, r=destination.r))
     return payloads
 
 

@@ -62,11 +62,14 @@ class TeamState:
     hand: List[dict] = field(default_factory=list)
     players: List[str] = field(default_factory=list)
 
+    def draw_card(self) -> dict:
+        if not self.deck:
+            self.deck = build_deck()
+        return make_card(self.deck.pop())
+
     def draw(self, count: int = 1) -> None:
         for _ in range(count):
-            if not self.deck:
-                self.deck = build_deck()
-            self.hand.append(make_card(self.deck.pop()))
+            self.hand.append(self.draw_card())
 
     def to_dict(self) -> dict:
         return {
@@ -86,6 +89,7 @@ class BoardState:
     map: BoardMap
     units: Dict[str, UnitInstance] = field(default_factory=dict)
     reinforcements: Dict[str, List[str]] = field(default_factory=lambda: {"yellow": [], "blue": []})
+    spells: Dict[str, List[dict]] = field(default_factory=lambda: {"yellow": [], "blue": []})
     terrain: Dict[str, Optional[str]] = field(default_factory=lambda: {terrain.value: None for terrain in Terrain})
     spawn_locked: Dict[str, bool] = field(default_factory=lambda: {"yellow": False, "blue": False})
     last_mover_id: Optional[str] = None
@@ -111,6 +115,10 @@ class BoardState:
             "reinforcements": {
                 team: [game.template(template_id).to_dict() for template_id in template_ids]
                 for team, template_ids in self.reinforcements.items()
+            },
+            "spells": {
+                team: [serialize_card(card) for card in cards]
+                for team, cards in self.spells.items()
             },
             "terrain": terrain_map,
             "spawnLocked": dict(self.spawn_locked),
@@ -357,6 +365,8 @@ def _find_unsupported_spawn_dependency(game: Game, move_action: TurnAction) -> O
     terrain_spawn = set(before_stats["terrainSpawn"])
     for index, action in enumerate(game.turn_history):
         if action.sequence >= move_action.sequence or action.board != board_index:
+            continue
+        if action.before is None:
             continue
         if action.kind == "spawn" and before_stats["spawn"] and action.unit_ids:
             spawned_unit = current_board.units.get(action.unit_ids[0])
@@ -751,7 +761,8 @@ def attack_unit(game: Game, color: str, board_index: int, attacker_id: str, targ
         if stats["flurry"]:
             if attacker.flurry_remaining is None:
                 attacker.flurry_remaining = total
-            damage = amount or attacker.flurry_remaining
+            target_health = game.unit_stats(target)["defense"] - target.damage
+            damage = amount if amount is not None else min(attacker.flurry_remaining, target_health)
             if damage <= 0 or damage > attacker.flurry_remaining:
                 raise RuleError("invalid flurry amount")
             _note_action(board, attacker.id)
@@ -817,22 +828,22 @@ def _charge_spell(game: Game, color: str, spell_id: str, target: Optional[UnitIn
 def cast_spell(game: Game, color: str, card_id: str, payload: dict, discarded: bool = False) -> None:
     ensure_turn(game, color)
     team = game.teams[color]
-    card = next((candidate for candidate in team.hand if candidate["cardId"] == card_id), None)
+    board = board_at(game, int(payload.get("board", 0)))
+    card = next((candidate for candidate in board.spells[color] if candidate["cardId"] == card_id), None)
     if not card:
-        raise RuleError("card is not in hand")
+        raise RuleError("card is not in this board's hand")
     spell_id = card["spellId"]
     spell = SPELLS[spell_id]
     if discarded and not spell.cantrip:
-        team.hand.remove(card)
+        board.spells[color].remove(card)
         team.mana += 1
         game.log.append(f"{color.title()} discarded {spell.name} for 1 mana.")
         return
-    board = board_at(game, int(payload.get("board", 0)))
     target = unit_at(board, payload["targetId"]) if payload.get("targetId") else None
     if not discarded:
         _charge_spell(game, color, spell_id, target if target and target.team != color else None)
     _resolve_spell(game, color, board, spell_id, payload)
-    team.hand.remove(card)
+    board.spells[color].remove(card)
     if discarded:
         team.mana += 1
         game.log.append(f"{color.title()} discarded {spell.name} and used its cantrip.")
@@ -944,9 +955,9 @@ def _move_spell_target(game: Game, board: BoardState, target: UnitInstance, payl
 
 
 def _draw_turn_spells(game: Game, color: str) -> None:
-    count = len(game.boards)
-    game.teams[color].draw(count)
-    game.log.append(f"{color.title()} drew {count} spell card(s), one per board.")
+    for board in game.boards:
+        board.spells[color].append(game.teams[color].draw_card())
+    game.log.append(f"{color.title()} drew {len(game.boards)} spell card(s), one per board.")
 
 
 def draw_spell(game: Game, color: str) -> None:

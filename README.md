@@ -77,7 +77,7 @@ The spell deck contains ten copies of Fester, Unsummon, Stumble, Shield, and Rep
 
 By default spells cost 0 mana. Some spells cost 1 mana. Players may cast spells only on their turn. Discarding a card gives 1 mana; cantrip cards also resolve when discarded. Duration effects last until the start of the caster's next turn. Spawn-phase-only spells can only be cast in the spawn phase.
 
-At the start of each team's turn, that team draws one random spell card per board. There is no maximum hand size. Yellow draws for the opening turn when the game is created; blue draws when blue's first turn starts.
+At the start of each team's turn, that team draws one random spell card into each board's spell hand. There is no maximum hand size. Yellow draws for the opening turn when the game is created; blue draws when blue's first turn starts.
 
 ## Turn Flow
 

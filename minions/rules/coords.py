@@ -68,11 +68,11 @@ def reflect_necromancer_axis(hex_: Hex) -> Hex:
 
 
 def yellow_spawn_center() -> Hex:
-    return Hex(1, BOARD_SIZE - 2)
+    return Hex(2, BOARD_SIZE - 3)
 
 
 def blue_spawn_center() -> Hex:
-    return Hex(BOARD_SIZE - 2, 1)
+    return Hex(BOARD_SIZE - 3, 2)
 
 
 def spawn_cluster(center: Hex) -> List[Hex]:

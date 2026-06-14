@@ -43,7 +43,8 @@ def evaluate_game(game: Game, color: str, weights: EvaluationWeights = DEFAULT_W
 def _team_score(game: Game, color: str, weights: EvaluationWeights) -> float:
     team = game.teams[color]
     score = game.scores[color] * weights.board_point
-    score += team.souls * weights.soul + team.mana * weights.mana + len(team.hand) * weights.card
+    card_count = sum(len(board.spells[color]) for board in game.boards)
+    score += team.souls * weights.soul + team.mana * weights.mana + card_count * weights.card
     score += sum(unit_template_value(unit) * weights.researched for unit in team.researched.values())
     for board in game.boards:
         score += _board_team_score(game, board, color, weights)
