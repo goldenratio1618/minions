@@ -283,6 +283,11 @@ class GameplayTests(unittest.TestCase):
         apply_action(game, "blue", "spawn_terrain", {"board": 0, "sourceId": "ghost", "terrain": Terrain.FLOOD.value, "q": 6, "r": 5})
         self.assertEqual(board.terrain[Terrain.FLOOD.value], "6,5")
 
+    def test_generated_units_spawn_at_most_one_terrain_type(self):
+        for seed in range(250):
+            unit = generate_random_unit(seed=seed)
+            self.assertLessEqual(len(unit.terrain_spawn), 1)
+
     def test_friendly_units_are_pass_through_not_destinations(self):
         game = create_game(board_count=1, seed=13)
         board = game.boards[0]

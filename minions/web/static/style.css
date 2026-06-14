@@ -169,7 +169,6 @@ p {
 }
 
 .status-strip,
-.board-tabs,
 .action-bar,
 .side-panel,
 .lab-output,
@@ -199,11 +198,11 @@ p {
   font-weight: 700;
 }
 
-.board-tabs {
+.board-selector {
   display: flex;
   gap: 7px;
-  padding: 8px;
-  margin-bottom: 10px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .action-bar {
@@ -215,10 +214,15 @@ p {
   margin-bottom: 12px;
 }
 
-.action-hint {
-  color: var(--muted);
-  font-size: 0.88rem;
-  font-weight: 650;
+.info-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  padding: 0;
+  font-family: Georgia, serif;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .map-wrap {
@@ -665,6 +669,7 @@ p {
 .panel-reinforcements {
   grid-area: reinforcements;
   align-self: stretch;
+  min-height: 304px;
 }
 
 .panel-research {
@@ -678,6 +683,7 @@ p {
 .panel-hover {
   grid-area: hover;
   align-self: stretch;
+  min-height: 304px;
 }
 
 .panel-actions {
@@ -757,7 +763,8 @@ p {
   display: none;
 }
 
-.panel-reinforcements .compact-list {
+.panel-reinforcements .compact-list,
+.reinforcement-list {
   align-content: start;
 }
 
@@ -765,31 +772,71 @@ p {
   justify-items: start;
 }
 
-.panel-reinforcements .bench-unit {
+.reinforcement-list {
+  display: grid;
+  gap: 7px;
+}
+
+.reinforcement-list.single {
+  grid-template-columns: 1fr;
+}
+
+.reinforcement-list.dense {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.reinforcement-list.scrollable {
+  max-height: 252px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.reinforcement-list.dense .mini-card {
+  min-width: 0;
+  padding: 5px;
+  gap: 4px;
+  font-size: 0.72rem;
+}
+
+.reinforcement-list.dense .mini-card strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+}
+
+.reinforcement-list.dense .bench-stats,
+.reinforcement-list.dense .bench-help {
+  display: none;
+}
+
+.reinforcement-list.single .bench-unit {
   width: 112px;
   height: 98px;
 }
 
-.panel-reinforcements .unit-token {
+.reinforcement-list.single .unit-token {
   inset: 0;
   font-size: 0.78rem;
 }
 
-.panel-reinforcements .cost-line {
+.reinforcement-list.single .cost-line {
   top: 8px;
   left: 30px;
   right: 30px;
   font-size: 0.88rem;
 }
 
-.panel-reinforcements .speed-line {
+.reinforcement-list.single .speed-line {
   top: 42px;
   left: 9px;
   width: 31px;
   font-size: 0.78rem;
 }
 
-.panel-reinforcements .ability-line {
+.reinforcement-list.single .ability-line {
   top: 34px;
   right: 8px;
   width: 32px;
@@ -797,25 +844,78 @@ p {
   font-size: 0.78rem;
 }
 
-.panel-reinforcements .terrain-line {
+.reinforcement-list.single .terrain-line {
   left: 26px;
   right: 26px;
   bottom: 31px;
   font-size: 0.58rem;
 }
 
-.panel-reinforcements .combat-line {
+.reinforcement-list.single .combat-line {
   left: 28px;
   right: 28px;
   bottom: 16px;
   font-size: 0.88rem;
 }
 
-.panel-reinforcements .combat-line.flurry-combat {
+.reinforcement-list.single .combat-line.flurry-combat {
   left: 22px;
   right: 22px;
   bottom: 16px;
   font-size: 0.78rem;
+}
+
+.reinforcement-list.dense .bench-unit {
+  width: 67px;
+  height: 59px;
+}
+
+.reinforcement-list.dense .unit-token {
+  inset: 0;
+  font-size: 0.47rem;
+}
+
+.reinforcement-list.dense .cost-line {
+  top: 4px;
+  left: 18px;
+  right: 18px;
+  font-size: 0.54rem;
+}
+
+.reinforcement-list.dense .speed-line {
+  top: 23px;
+  left: 3px;
+  width: 18px;
+  font-size: 0.46rem;
+}
+
+.reinforcement-list.dense .ability-line {
+  top: 19px;
+  right: 3px;
+  width: 18px;
+  height: 22px;
+  font-size: 0.45rem;
+}
+
+.reinforcement-list.dense .terrain-line {
+  left: 14px;
+  right: 14px;
+  bottom: 18px;
+  font-size: 0.34rem;
+}
+
+.reinforcement-list.dense .combat-line {
+  left: 16px;
+  right: 16px;
+  bottom: 9px;
+  font-size: 0.54rem;
+}
+
+.reinforcement-list.dense .combat-line.flurry-combat {
+  left: 10px;
+  right: 10px;
+  bottom: 9px;
+  font-size: 0.46rem;
 }
 
 .drag-ghost {

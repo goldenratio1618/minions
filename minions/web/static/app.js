@@ -15,7 +15,6 @@ const state = {
   mapScroll: {},
   pathPreview: [],
   suppressClick: false,
-  terrain: "firestorm",
   vsAI: false,
   aiColor: null,
   aiThinking: false,
@@ -402,17 +401,14 @@ function renderGame() {
     </div>
     <div class="game-layout">
       <div class="map-column">
-        <div class="board-tabs">
-          ${state.game.boards.map((b, idx) => `<button class="secondary ${idx === state.board ? "active" : ""}" data-board="${idx}">Board ${idx + 1}</button>`).join("")}
-        </div>
         <div class="action-bar">
-          <select id="terrain-select">
-            ${Object.entries(state.game.terrainLabels).map(([kind, label]) => `<option value="${kind}" ${kind === state.terrain ? "selected" : ""}>${label}</option>`).join("")}
-          </select>
+          <div class="board-selector">
+            ${state.game.boards.map((b, idx) => `<button class="secondary ${idx === state.board ? "active" : ""}" data-board="${idx}">Board ${idx + 1}</button>`).join("")}
+          </div>
           <button ${!active || !state.game.canRedo ? "disabled" : ""} onclick="action('redo')">Redo</button>
           <button ${!active || currentBoard.winner ? "disabled" : ""} onclick="confirm('Resign this board? Your opponent gets a board point now.') && action('resign_board', {board:${state.board}})">Resign Board</button>
           <button ${!active ? "disabled" : ""} onclick="action('end_turn')">End Turn</button>
-          <span class="action-hint">${state.vsAI && state.game.turn === state.aiColor ? "The AI is taking its turn." : "Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation."}</span>
+          <button class="info-button secondary" type="button" title="${state.vsAI && state.game.turn === state.aiColor ? "The AI is taking its turn." : "Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation."}" aria-label="Turn controls help">i</button>
         </div>
         <div class="map-wrap" data-map-wrap data-board-index="${state.board}">${renderMap(currentBoard)}</div>
       </div>
@@ -461,8 +457,6 @@ function renderGame() {
   document.querySelectorAll(".bench-unit[data-template]").forEach((button) => {
     button.addEventListener("pointerdown", (event) => handleBenchPointerDown(event, button.dataset.template));
   });
-  const terrainSelect = $("terrain-select");
-  if (terrainSelect) terrainSelect.addEventListener("change", (event) => (state.terrain = event.target.value));
   wireMapInteractions();
   restoreMapScroll();
 }
@@ -770,11 +764,7 @@ function handleHexDoubleClick(q, r, unitId) {
   if (!terrains.length) return;
   let terrain = terrains[0];
   if (terrains.length > 1) {
-    const choices = terrains.map((kind) => state.game.terrainLabels[kind] || kind).join(", ");
-    const answer = window.prompt(`Choose terrain to spawn: ${choices}`, state.game.terrainLabels[terrain] || terrain);
-    if (!answer) return;
-    const normalized = answer.trim().toLowerCase();
-    terrain = terrains.find((kind) => kind === normalized || (state.game.terrainLabels[kind] || "").toLowerCase() === normalized);
+    terrain = promptTerrainChoice(terrains, terrain);
     if (!terrain) {
       notice("That terrain is not available to this unit.");
       return;
@@ -981,14 +971,15 @@ function handlePointerUp(event) {
 function renderReinforcements(b) {
   const list = b.reinforcements[state.color] || [];
   if (!list.length) return '<div class="mini-card">No reinforcements on this board.</div>';
-  return list.map((unit) => `
+  const densityClass = list.length >= 2 ? "dense" : "single";
+  return `<div class="reinforcement-list ${densityClass} ${list.length > 6 ? "scrollable" : ""}">${list.map((unit) => `
     <div class="mini-card">
       <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
       <button class="bench-unit ${state.selectedTemplate === unit.id ? "active" : ""}" type="button" data-template="${unit.id}" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Reinforcement')" onclick="state.selectedTemplate='${unit.id}'">${unitToken({ ...unit, team: state.color })}</button>
-      <div>${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
-      <div class="muted">Drag onto a legal adjacent spawn hex.</div>
+      <div class="bench-stats">${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
+      <div class="muted bench-help">Drag onto a legal adjacent spawn hex.</div>
     </div>
-  `).join("");
+  `).join("")}</div>`;
 }
 
 function renderResearch() {
@@ -1057,6 +1048,14 @@ function spellCanTargetTerrain(spellId) {
   return spellId === "normalize";
 }
 
+function promptTerrainChoice(terrains, fallback) {
+  const labels = terrains.map((kind) => state.game.terrainLabels[kind] || kind);
+  const answer = window.prompt(`Choose terrain: ${labels.join(", ")}`, state.game.terrainLabels[fallback] || fallback || labels[0]);
+  if (!answer) return null;
+  const normalized = answer.trim().toLowerCase();
+  return terrains.find((kind) => kind === normalized || (state.game.terrainLabels[kind] || "").toLowerCase() === normalized) || null;
+}
+
 function handleSpellClick(q, r, unitId) {
   const card = state.selectedCard;
   if (!card) return;
@@ -1078,13 +1077,21 @@ function handleSpellClick(q, r, unitId) {
     return;
   }
   if (state.spellTarget) {
+    let terrain = null;
+    if (card.id === "terraform") {
+      terrain = promptTerrainChoice(Object.keys(state.game.terrainLabels), "firestorm");
+      if (!terrain) {
+        notice("Choose a terrain for Terraform.");
+        return;
+      }
+    }
     const payload = {
       board: state.board,
       cardId: card.cardId,
       targetId: state.spellTarget,
       q,
       r,
-      terrain: state.terrain,
+      terrain,
       templateId: state.selectedTemplate,
     };
     action(card.discard ? "discard_spell" : "cast_spell", payload);

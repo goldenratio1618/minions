@@ -298,7 +298,7 @@ def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA) -> Un
     ward = 1 if rng.random() < 0.2 else 0
     flying = rng.random() < 0.2
     lumbering = rng.random() < 0.2
-    terrain_spawn = tuple(terrain.value for terrain in Terrain if rng.random() < 0.05)
+    terrain_spawn = (rng.choice(tuple(terrain.value for terrain in Terrain)),) if rng.random() < 0.2 else ()
     if isinstance(attack, int) and attack >= 3 and rng.random() < 0.25:
         attack = "*"
     if isinstance(attack, int) and attack >= 6 and flurry and rng.random() < 0.25:
