@@ -1,7 +1,7 @@
 import unittest
 
-from minions.ai.actions import legal_actions
-from minions.ai.player import play_turn
+from minions.ai.actions import ActionCandidate, legal_actions
+from minions.ai.player import TurnResult, _apply, play_turn
 from minions.rules.constants import Phase
 from minions.rules.game import create_game, end_turn
 
@@ -46,6 +46,16 @@ class AITests(unittest.TestCase):
             moves = [action for action in result.actions if action["action"] == "move"]
 
             self.assertGreaterEqual(len(moves), 1)
+
+    def test_ai_actions_do_not_keep_undo_snapshots(self):
+        game = create_game(board_count=1, seed=106)
+        game.teams["yellow"].souls = 1
+        candidate = ActionCandidate("research", {}, "economy")
+
+        self.assertTrue(_apply(game, "yellow", candidate, TurnResult("yellow")))
+
+        self.assertTrue(game.turn_history)
+        self.assertTrue(all(action.before is None for action in game.turn_history))
 
 
 if __name__ == "__main__":

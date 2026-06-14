@@ -306,6 +306,24 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual([action.unit_ids[0] for action in game.turn_history], ["c"])
         self.assertTrue(game.redo_snapshot)
 
+    def test_undo_snapshots_do_not_nest_prior_snapshots(self):
+        game = create_game(board_count=1, seed=16)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        board.units.clear()
+        board.map.water.clear()
+        board.units = {
+            "a": UnitInstance("a", "zombie", "blue", "5,5"),
+            "b": UnitInstance("b", "zombie", "blue", "7,7"),
+        }
+
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "a", "q": 6, "r": 5})
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "b", "q": 7, "r": 6})
+
+        nested_history = game.turn_history[-1].before["turn_history"]
+        self.assertEqual(len(nested_history), 1)
+        self.assertIsNone(nested_history[0].before)
+
     def test_moving_last_unit_spawner_undoes_dependent_spawn(self):
         game = create_game(board_count=1, seed=17)
         board = game.boards[0]

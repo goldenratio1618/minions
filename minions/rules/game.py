@@ -213,9 +213,16 @@ def _snapshot(game: Game) -> dict:
         "turn_number": game.turn_number,
         "unit_catalog": copy.deepcopy(game.unit_catalog),
         "log": copy.deepcopy(game.log),
-        "turn_history": copy.deepcopy(game.turn_history),
+        "turn_history": _snapshot_turn_history(game.turn_history),
         "next_action_id": game.next_action_id,
     }
+
+
+def _snapshot_turn_history(turn_history: List[TurnAction]) -> List[TurnAction]:
+    history = copy.deepcopy(turn_history)
+    for action in history:
+        action.before = None
+    return history
 
 
 def _restore_snapshot(game: Game, snapshot: dict) -> None:

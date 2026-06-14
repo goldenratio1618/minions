@@ -67,11 +67,23 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  const data = await res.json();
+  const contentType = res.headers.get("Content-Type") || "";
+  const text = await res.text();
+  let data = {};
+  if (contentType.includes("application/json") && text) {
+    try {
+      data = JSON.parse(text);
+    } catch (_err) {
+      data = {};
+    }
+  }
   if (!res.ok) {
-    const error = new Error(data.error || "Request failed");
+    const error = new Error(data.error || `Request failed with HTTP ${res.status}`);
     error.data = data;
     throw error;
+  }
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Expected JSON but received ${contentType || "an unknown response type"}`);
   }
   return data;
 }

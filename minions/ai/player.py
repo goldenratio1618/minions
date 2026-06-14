@@ -267,10 +267,13 @@ def _action_penalty(candidate: ActionCandidate) -> float:
 
 
 def _apply(game: Game, color: str, candidate: ActionCandidate, result: TurnResult) -> bool:
+    history_len = len(game.turn_history)
     try:
         apply_action(game, color, candidate.action, copy.deepcopy(candidate.payload))
     except RuleError:
         return False
+    for action in game.turn_history[history_len:]:
+        action.before = None
     result.actions.append(
         {
             "action": candidate.action,
