@@ -146,6 +146,16 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(path, ["1,5", "0,4"])
         self.assertEqual(board.units["zombie"].hex, "0,4")
 
+    def test_rejected_spawn_does_not_block_later_turn_actions(self):
+        game = create_game(board_count=1, seed=22)
+        with self.assertRaisesRegex(ValueError, "opening turn|adjacent|legal"):
+            apply_action(game, "yellow", "spawn", {"board": 0, "templateId": "zombie", "q": 0, "r": 0})
+
+        apply_action(game, "yellow", "end_turn", {})
+
+        self.assertEqual(game.turn, "blue")
+        self.assertEqual(game.phase, Phase.SPAWN.value)
+
     def test_blue_can_spawn_without_changing_phase_and_spawned_unit_is_exhausted(self):
         game = create_game(board_count=1, seed=12)
         board = game.boards[0]

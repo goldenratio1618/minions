@@ -72,6 +72,26 @@ async function api(path, options = {}) {
   return data;
 }
 
+function resetInteractionState() {
+  state.mode = "select";
+  state.selectedCard = null;
+  state.spellTarget = null;
+  state.terrainSpawnSource = null;
+  state.drag = null;
+  state.pathPreview = [];
+  state.suppressClick = false;
+  removeDragGhost();
+  drawPathPreview([]);
+}
+
+async function refreshGame() {
+  if (!state.game) return;
+  const data = await api(`/api/games/${state.game.code}`);
+  state.game = data.game;
+  if (state.board >= state.game.boards.length) state.board = 0;
+  renderGame();
+}
+
 async function action(actionName, payload = {}) {
   if (!state.game) return;
   try {
@@ -85,6 +105,12 @@ async function action(actionName, payload = {}) {
     notice("Done.", true);
     await maybeAutoPlayAI();
   } catch (err) {
+    resetInteractionState();
+    try {
+      await refreshGame();
+    } catch (_refreshErr) {
+      renderGame();
+    }
     notice(err.message);
   }
 }
