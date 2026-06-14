@@ -68,7 +68,11 @@ async function api(path, options = {}) {
     ...options,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
+  if (!res.ok) {
+    const error = new Error(data.error || "Request failed");
+    error.data = data;
+    throw error;
+  }
   return data;
 }
 
@@ -106,10 +110,15 @@ async function action(actionName, payload = {}) {
     await maybeAutoPlayAI();
   } catch (err) {
     resetInteractionState();
-    try {
-      await refreshGame();
-    } catch (_refreshErr) {
+    if (err.data && err.data.game) {
+      state.game = err.data.game;
       renderGame();
+    } else {
+      try {
+        await refreshGame();
+      } catch (_refreshErr) {
+        renderGame();
+      }
     }
     notice(err.message);
   }

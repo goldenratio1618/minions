@@ -176,14 +176,22 @@ class Handler(BaseHTTPRequestHandler):
             color = body.get("color", "")
             action = body.get("action", "")
             payload = body.get("payload", {})
-            result = apply_action(game, color, action, payload)
+            try:
+                result = apply_action(game, color, action, payload)
+            except RuleError as exc:
+                self._json({"error": str(exc), "game": game.to_dict()}, status=400)
+                return
             self._json({"game": game.to_dict(), "result": result})
             return
         if len(parts) == 4 and parts[:2] == ["api", "games"] and parts[3] == "ai-turn":
             game = STORE.get(parts[2])
             color = body.get("color", game.turn)
             time_limit = max(0.1, min(60.0, float(body.get("timeLimit", 10.0))))
-            result = play_turn(game, color, time_limit=time_limit)
+            try:
+                result = play_turn(game, color, time_limit=time_limit)
+            except RuleError as exc:
+                self._json({"error": str(exc), "game": game.to_dict()}, status=400)
+                return
             self._json({"game": game.to_dict(), "result": result.to_dict()})
             return
         raise RuleError("not found")
