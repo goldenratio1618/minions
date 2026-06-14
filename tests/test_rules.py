@@ -1,7 +1,7 @@
 import unittest
 
 from minions.rules.constants import Phase, Terrain
-from minions.rules.coords import Hex, neighbors, reflect_necromancer_axis
+from minions.rules.coords import Hex, distance, neighbors, reflect_necromancer_axis
 from minions.rules.game import apply_action, can_enter, create_game, end_turn, is_unit_spawn_destination, move_unit, research_unit, set_phase, unit_on_hex
 from minions.rules.maps import generate_map
 from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, UnitInstance, attack_for_power, generate_random_unit, predicted_expression
@@ -125,6 +125,26 @@ class GameplayTests(unittest.TestCase):
         destination = next(hex_ for hex_ in neighbors(current) if hex_.to_key() not in occupied and hex_ not in board.map.water)
         move_unit(game, "blue", 0, unit.id, destination.q, destination.r)
         self.assertEqual(unit.hex, destination.to_key())
+
+    def test_rendered_diagonal_land_edge_is_adjacent(self):
+        self.assertIn(Hex(0, 4), neighbors(Hex(1, 5)))
+        self.assertNotIn(Hex(2, 4), neighbors(Hex(1, 5)))
+        self.assertEqual(distance(Hex(1, 5), Hex(0, 4)), 1)
+
+        game = create_game(board_count=1, seed=21)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        set_phase(game, "blue", "movement")
+        board.units.clear()
+        board.map.water = {Hex(0, 5), Hex(1, 4)}
+        board.map.graveyards.clear()
+        board.terrain = {terrain.value: None for terrain in Terrain}
+        board.units["zombie"] = UnitInstance("zombie", "zombie", "blue", "1,5")
+
+        path = move_unit(game, "blue", 0, "zombie", 0, 4)
+
+        self.assertEqual(path, ["1,5", "0,4"])
+        self.assertEqual(board.units["zombie"].hex, "0,4")
 
     def test_blue_can_spawn_without_changing_phase_and_spawned_unit_is_exhausted(self):
         game = create_game(board_count=1, seed=12)

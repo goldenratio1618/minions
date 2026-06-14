@@ -408,6 +408,10 @@ p {
   --unit-border: #249047;
 }
 
+.unit-token.state-moved {
+  --unit-border: #7c3fb3;
+}
+
 .unit-token.state-attacked {
   --unit-border: #d9861c;
 }

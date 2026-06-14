@@ -26,11 +26,11 @@ const MAP_PADDING = 34;
 const MAP_ROTATION = (2 * Math.PI) / 3;
 const HEX_DIRECTIONS = [
   [1, 0],
-  [1, -1],
-  [0, -1],
-  [-1, 0],
-  [-1, 1],
+  [1, 1],
   [0, 1],
+  [-1, 0],
+  [-1, -1],
+  [0, -1],
 ];
 
 function rotatedBoardMetrics(size = 10) {
@@ -199,12 +199,20 @@ function speedIcon(unit) {
 function unitToken(unit, preview = false) {
   const tpl = unit.template || unit;
   const stats = unit.stats || unit;
+  const hasNoMovementLeft =
+    unit.id &&
+    unit.moved &&
+    unit.movementRemaining !== null &&
+    unit.movementRemaining !== undefined &&
+    unit.movementRemaining <= 0;
   const statusClass = unit.id
     ? unit.exhausted
       ? "state-exhausted"
       : unit.attacked
         ? "state-attacked"
-        : "state-ready"
+        : hasNoMovementLeft
+          ? "state-moved"
+          : "state-ready"
     : "";
   const attack = stats.attack !== undefined ? stats.attack : tpl.attack;
   const atk = stats.flurry

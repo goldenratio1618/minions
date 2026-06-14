@@ -25,11 +25,11 @@ class Hex:
 
 DIRECTIONS = (
     Hex(1, 0),
-    Hex(1, -1),
-    Hex(0, -1),
-    Hex(-1, 0),
-    Hex(-1, 1),
+    Hex(1, 1),
     Hex(0, 1),
+    Hex(-1, 0),
+    Hex(-1, -1),
+    Hex(0, -1),
 )
 
 
@@ -48,7 +48,7 @@ def neighbors(hex_: Hex) -> List[Hex]:
 def distance(a: Hex, b: Hex) -> int:
     dq = a.q - b.q
     dr = a.r - b.r
-    return int((abs(dq) + abs(dr) + abs(dq + dr)) / 2)
+    return max(abs(dq), abs(dr), abs(dq - dr))
 
 
 def all_hexes() -> List[Hex]:
