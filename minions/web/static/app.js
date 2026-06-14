@@ -13,6 +13,9 @@ const state = {
   pathPreview: [],
   suppressClick: false,
   terrain: "firestorm",
+  vsAI: false,
+  aiColor: null,
+  aiThinking: false,
 };
 
 const HEX_WIDTH = 80;
@@ -80,9 +83,57 @@ async function action(actionName, payload = {}) {
     state.pathPreview = data.result && data.result.path ? data.result.path : [];
     renderGame();
     notice("Done.", true);
+    await maybeAutoPlayAI();
   } catch (err) {
     notice(err.message);
   }
+}
+
+async function aiTurn(color = state.color, silent = false) {
+  if (!state.game) return;
+  try {
+    state.aiThinking = true;
+    renderGame();
+    if (!silent) notice("AI is thinking...", true);
+    const data = await api(`/api/games/${state.game.code}/ai-turn`, {
+      method: "POST",
+      body: JSON.stringify({ color, timeLimit: 10 }),
+    });
+    state.game = data.game;
+    state.pathPreview = [];
+    state.aiThinking = false;
+    renderGame();
+    const count = data.result && data.result.actions ? data.result.actions.length : 0;
+    const elapsed = data.result && data.result.elapsedSeconds ? data.result.elapsedSeconds.toFixed(2) : "0.00";
+    notice(`AI played ${count} action${count === 1 ? "" : "s"} in ${elapsed}s.`, true);
+  } catch (err) {
+    state.aiThinking = false;
+    renderGame();
+    notice(err.message);
+  }
+}
+
+async function maybeAutoPlayAI() {
+  if (!state.vsAI || !state.game || state.aiThinking || state.game.winner) return;
+  while (state.vsAI && state.game && state.game.turn === state.aiColor && !state.game.winner) {
+    await aiTurn(state.aiColor, true);
+  }
+}
+
+function configureHumanGame(color) {
+  state.color = color;
+  state.vsAI = false;
+  state.aiColor = null;
+  state.aiThinking = false;
+  localStorage.setItem("minions-color", state.color);
+}
+
+function configureAIGame(color) {
+  state.color = color;
+  state.vsAI = true;
+  state.aiColor = opponentColor();
+  state.aiThinking = false;
+  localStorage.setItem("minions-color", state.color);
 }
 
 function board() {
@@ -220,14 +271,16 @@ function renderGame() {
   }
   root.className = "game-root";
   const currentBoard = board();
-  const active = state.game.turn === state.color;
+  const active = state.game.turn === state.color && !state.aiThinking;
   const selected = state.selectedUnit ? unitById(state.selectedUnit) : null;
   root.innerHTML = `
     <div class="status-strip">
       <div>
         <span class="status-pill">Code ${state.game.code}</span>
         <span class="status-pill">You ${state.color}</span>
+        ${state.vsAI ? `<span class="status-pill">AI ${state.aiColor}</span>` : '<span class="status-pill">Players game</span>'}
         <span class="status-pill">Turn ${state.game.turn}</span>
+        ${state.aiThinking ? '<span class="status-pill">AI thinking</span>' : ""}
         <span class="status-pill">Score Y ${state.game.scores.yellow} / B ${state.game.scores.blue}</span>
       </div>
       <div>
@@ -248,7 +301,7 @@ function renderGame() {
           <button ${!active || !state.game.canRedo ? "disabled" : ""} onclick="action('redo')">Redo</button>
           <button ${!active || currentBoard.winner ? "disabled" : ""} onclick="confirm('Resign this board? Your opponent gets a board point now.') && action('resign_board', {board:${state.board}})">Resign Board</button>
           <button ${!active ? "disabled" : ""} onclick="action('end_turn')">End Turn</button>
-          <span class="action-hint">Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation.</span>
+          <span class="action-hint">${state.vsAI && state.game.turn === state.aiColor ? "The AI is taking its turn." : "Drag units to move or attack. Drag reinforcements onto legal spawn hexes. Right-click a unit to undo its last operation."}</span>
         </div>
         <div class="map-wrap"><div class="hex-map">${renderMap(currentBoard)}</div></div>
       </div>
@@ -852,11 +905,13 @@ $("color-input").value = state.color;
 $("color-input").addEventListener("change", (event) => {
   state.color = event.target.value;
   localStorage.setItem("minions-color", state.color);
+  if (state.vsAI) state.aiColor = opponentColor();
   renderGame();
 });
 
 $("create-game").addEventListener("click", async () => {
   try {
+    configureHumanGame($("color-input").value);
     const data = await api("/api/games", {
       method: "POST",
       body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
@@ -864,16 +919,34 @@ $("create-game").addEventListener("click", async () => {
     state.game = data.game;
     $("code-input").value = state.game.code;
     renderGame();
-    notice(`Created game ${state.game.code}.`, true);
+    notice(`Created players game ${state.game.code}.`, true);
   } catch (err) {
+    notice(err.message);
+  }
+});
+
+$("play-ai").addEventListener("click", async () => {
+  try {
+    configureAIGame($("color-input").value);
+    const data = await api("/api/games", {
+      method: "POST",
+      body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
+    });
+    state.game = data.game;
+    $("code-input").value = state.game.code;
+    renderGame();
+    notice(`Started game ${state.game.code}. You are ${state.color}; AI is ${state.aiColor}.`, true);
+    await maybeAutoPlayAI();
+  } catch (err) {
+    state.aiThinking = false;
+    renderGame();
     notice(err.message);
   }
 });
 
 $("join-game").addEventListener("click", async () => {
   try {
-    state.color = $("color-input").value;
-    localStorage.setItem("minions-color", state.color);
+    configureHumanGame($("color-input").value);
     const code = $("code-input").value.trim().toUpperCase();
     const data = await api(`/api/games/${code}/join`, {
       method: "POST",
@@ -908,6 +981,7 @@ $("generate-unit").addEventListener("click", async () => {
 });
 
 window.action = action;
+window.aiTurn = aiTurn;
 window.setMode = setMode;
 window.selectCardById = selectCardById;
 window.updateHoverUnitTemplate = updateHoverUnitTemplate;

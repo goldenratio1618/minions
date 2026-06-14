@@ -10,6 +10,25 @@ python -m minions.app --host 127.0.0.1 --port 8000
 
 Then open `http://127.0.0.1:8000`.
 
+## AI Player
+
+Use **Play vs AI** in the top bar to create a local game against the AI. Choose the number of boards and your color first; the AI takes the other color and automatically plays whenever it is the AI's turn.
+
+The same turn-playing functionality is available through:
+
+```bash
+POST /api/games/{code}/ai-turn
+{"color": "yellow", "timeLimit": 10}
+```
+
+The AI is a rules-validated heuristic planner: it generates candidate economy, spawn, terrain, spell, movement, attack, blink, and end-turn actions, scores each by dry-running the existing `apply_action` reducer on a copied game, and applies the best sequence it finds before its time limit.
+
+For quick local weight tuning, run:
+
+```bash
+python3 scripts/tune_ai.py --seconds 60 --games 4 --boards 1 --per-turn-seconds 0.04 --max-turns 35
+```
+
 ## Game Setup
 
 The game is played by yellow and blue on a chosen number of boards. Creating a game returns a six-character code; another player can join that code and choose yellow or blue. Yellow goes first. Blue starts with `$4 * number_of_boards`.

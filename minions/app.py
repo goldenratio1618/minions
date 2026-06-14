@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
+from .ai.player import play_turn
 from .rules.game import Game, RuleError, apply_action, create_game, join_game
 from .rules.maps import generate_map
 from .rules.spells import spell_catalog
@@ -177,6 +178,13 @@ class Handler(BaseHTTPRequestHandler):
             payload = body.get("payload", {})
             result = apply_action(game, color, action, payload)
             self._json({"game": game.to_dict(), "result": result})
+            return
+        if len(parts) == 4 and parts[:2] == ["api", "games"] and parts[3] == "ai-turn":
+            game = STORE.get(parts[2])
+            color = body.get("color", game.turn)
+            time_limit = max(0.1, min(60.0, float(body.get("timeLimit", 10.0))))
+            result = play_turn(game, color, time_limit=time_limit)
+            self._json({"game": game.to_dict(), "result": result.to_dict()})
             return
         raise RuleError("not found")
 
