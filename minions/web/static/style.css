@@ -477,14 +477,19 @@ p {
 .ability-line {
   position: absolute;
   right: 3px;
-  top: 23px;
+  top: 21px;
   width: 23px;
-  display: grid;
+  height: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 1px;
   text-align: center;
   font-size: 0.55rem;
   font-weight: 900;
   overflow: hidden;
+  line-height: 1;
 }
 
 .terrain-line {
@@ -503,22 +508,23 @@ p {
 
 .combat-line {
   position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 7px;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
   display: flex;
-  gap: 4px;
+  gap: 3px;
   justify-content: space-between;
   align-items: center;
   font-weight: 900;
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   white-space: nowrap;
   overflow: visible;
 }
 
 .combat-line.flurry-combat {
-  left: 8px;
-  right: 8px;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
   gap: 2px;
   font-size: 0.55rem;
 }
@@ -718,15 +724,32 @@ p {
   top: 77px;
   left: 11px;
   width: 44px;
-  font-size: 0.82rem;
+  font-size: 1.05rem;
   gap: 2px;
 }
 
 .hover-unit-preview .ability-line {
-  top: 70px;
+  top: 66px;
   right: 10px;
   width: 44px;
-  font-size: 0.68rem;
+  height: 48px;
+  font-size: 1.08rem;
+  gap: 3px;
+}
+
+.hover-unit-preview .unit-icon {
+  width: 1.24em;
+  height: 1.24em;
+}
+
+.hover-unit-preview .speed-line .unit-icon {
+  width: 1.34em;
+  height: 1.34em;
+}
+
+.hover-unit-preview .ability-line .unit-icon {
+  width: 1.18em;
+  height: 1.18em;
 }
 
 .hover-unit-preview .terrain-line {
@@ -738,16 +761,17 @@ p {
 }
 
 .hover-unit-preview .combat-line {
-  left: 32px;
-  right: 32px;
-  bottom: 19px;
-  font-size: 0.98rem;
+  left: 38px;
+  right: 38px;
+  bottom: 24px;
+  font-size: 1.16rem;
 }
 
 .hover-unit-preview .combat-line.flurry-combat {
-  left: 28px;
-  right: 28px;
-  font-size: 0.9rem;
+  left: 32px;
+  right: 32px;
+  bottom: 24px;
+  font-size: 1.08rem;
 }
 
 .hover-unit-stats,
