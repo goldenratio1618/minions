@@ -328,6 +328,27 @@ class GameplayTests(unittest.TestCase):
 
         self.assertEqual(game.boards[0].units["a"].hex, "5,5")
 
+    def test_undo_earlier_unit_replays_independent_later_unit_action(self):
+        game = create_game(board_count=1, seed=23)
+        board = game.boards[0]
+        end_turn(game, "yellow")
+        board.units.clear()
+        board.map.water.clear()
+        board.terrain = {terrain.value: None for terrain in Terrain}
+        board.units = {
+            "a": UnitInstance("a", "zombie", "blue", "5,5"),
+            "b": UnitInstance("b", "zombie", "blue", "8,8"),
+        }
+
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "a", "q": 6, "r": 5})
+        apply_action(game, "blue", "move", {"board": 0, "unitId": "b", "q": 8, "r": 7})
+
+        apply_action(game, "blue", "undo_unit", {"board": 0, "unitId": "a"})
+
+        self.assertEqual(game.boards[0].units["a"].hex, "5,5")
+        self.assertEqual(game.boards[0].units["b"].hex, "8,7")
+        self.assertEqual([action.unit_ids[0] for action in game.turn_history], ["b"])
+
     def test_moving_last_unit_spawner_undoes_dependent_spawn(self):
         game = create_game(board_count=1, seed=17)
         board = game.boards[0]
