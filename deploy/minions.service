@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/minions
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -m minions.app --host 0.0.0.0 --port 80
+ExecStart=/usr/bin/python3 -m minions.app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=2
 

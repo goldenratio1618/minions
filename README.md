@@ -29,6 +29,10 @@ For quick local weight tuning, run:
 python3 scripts/tune_ai.py --seconds 60 --games 4 --boards 1 --per-turn-seconds 0.04 --max-turns 35
 ```
 
+## Production Deployment
+
+The EC2 deployment runs nginx on port 80 and proxies to the Python app on `127.0.0.1:8000`. The nginx config is in `deploy/nginx-minions.conf`; the systemd service is in `deploy/minions.service`.
+
 ## Game Setup
 
 The game is played by yellow and blue on a chosen number of boards. Creating a game returns a six-character code; another player can join that code and choose yellow or blue. Yellow goes first. Blue starts with `$4 * number_of_boards`.
