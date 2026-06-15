@@ -665,7 +665,7 @@ p {
 }
 
 .side-panel {
-  --top-inspector-card-height: clamp(500px, 38.6vw, 556px);
+  --top-inspector-card-height: clamp(200px, 15.44vw, 222px);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
@@ -679,7 +679,7 @@ p {
 .panel-reinforcements {
   grid-area: reinforcements;
   align-self: stretch;
-  min-height: 304px;
+  min-height: calc(var(--top-inspector-card-height) + 32px);
 }
 
 .panel-research {
@@ -693,7 +693,7 @@ p {
 .panel-hover {
   grid-area: hover;
   align-self: stretch;
-  min-height: 304px;
+  min-height: calc(var(--top-inspector-card-height) + 32px);
 }
 
 .panel-actions {
@@ -806,7 +806,7 @@ p {
 }
 
 .reinforcement-list.scrollable {
-  max-height: 252px;
+  max-height: var(--top-inspector-card-height);
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1007,14 +1007,14 @@ p {
 .hover-props {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 
 .hover-props span {
   border-radius: 999px;
   background: #efe1c8;
-  padding: 3px 7px;
-  font-size: 0.78rem;
+  padding: 3px 6px;
+  font-size: 0.72rem;
   font-weight: 800;
   line-height: 1.15;
   white-space: nowrap;
@@ -1022,9 +1022,9 @@ p {
 
 .hover-hex-preview {
   position: relative;
-  width: 190px;
-  height: 166px;
-  margin: 8px auto 0;
+  width: 133px;
+  height: 116px;
+  margin: 4px auto 0;
   clip-path: var(--hex-shape);
   --hex-fill: #d7b87c;
   --hex-border: rgba(54, 42, 30, 0.32);
@@ -1059,28 +1059,34 @@ p {
 }
 
 .hover-hex-preview .coord {
-  top: 18px;
-  font-size: 1rem;
+  top: 12px;
+  font-size: 0.78rem;
 }
 
 .hover-hex-preview .terrain-mark {
-  font-size: 2.75rem;
+  font-size: 1.9rem;
 }
 
 .hover-unit-name {
-  margin-top: 8px;
+  margin-top: 4px;
   font-weight: 900;
+  font-size: 0.9rem;
 }
 
 .hover-unit-preview {
   position: relative;
-  width: 190px;
-  height: 166px;
-  margin: 6px auto;
+  width: 133px;
+  height: 116px;
+  margin: 3px auto;
 }
 
 .hover-unit-preview .unit-token {
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 190px;
+  height: 166px;
+  transform: scale(0.7);
+  transform-origin: top left;
   font-size: 0.82rem;
 }
 
@@ -1164,7 +1170,7 @@ p {
 .hover-unit-stats,
 .hover-empty {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.78rem;
 }
 
 .lab-header {
