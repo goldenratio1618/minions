@@ -542,11 +542,12 @@ p {
   text-align: center;
   font-weight: 800;
   font-size: 0.55rem;
-  overflow: hidden;
+  overflow: visible;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 1px;
+  white-space: nowrap;
 }
 
 .ability-line {
@@ -557,14 +558,22 @@ p {
   height: 24px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   gap: 1px;
-  text-align: center;
+  text-align: right;
   font-size: 0.55rem;
   font-weight: 900;
-  overflow: hidden;
+  overflow: visible;
   line-height: 1;
+}
+
+.unit-token.movement-keywords-2 .speed-line {
+  width: 34px;
+}
+
+.unit-token.ability-keywords-2 .ability-line {
+  width: 34px;
 }
 
 .terrain-line {
@@ -696,11 +705,13 @@ p {
 
 .side-section {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
 }
 
 .side-section h3 {
   font-size: 1rem;
+  margin: 0;
 }
 
 .compact-list {
@@ -768,6 +779,11 @@ p {
   align-content: start;
 }
 
+.panel-reinforcements > .compact-list {
+  height: 100%;
+  min-height: 252px;
+}
+
 .panel-reinforcements .mini-card {
   justify-items: start;
 }
@@ -779,6 +795,8 @@ p {
 
 .reinforcement-list.single {
   grid-template-columns: 1fr;
+  height: 100%;
+  min-height: 252px;
 }
 
 .reinforcement-list.dense {
@@ -817,6 +835,13 @@ p {
   height: 98px;
 }
 
+.reinforcement-list.single .mini-card,
+.panel-reinforcements > .compact-list > .mini-card {
+  height: 100%;
+  min-height: 252px;
+  box-sizing: border-box;
+}
+
 .reinforcement-list.single .unit-token {
   inset: 0;
   font-size: 0.78rem;
@@ -836,12 +861,20 @@ p {
   font-size: 0.78rem;
 }
 
+.reinforcement-list.single .movement-keywords-2 .speed-line {
+  width: 48px;
+}
+
 .reinforcement-list.single .ability-line {
   top: 34px;
   right: 8px;
   width: 32px;
   height: 34px;
   font-size: 0.78rem;
+}
+
+.reinforcement-list.single .ability-keywords-2 .ability-line {
+  width: 48px;
 }
 
 .reinforcement-list.single .terrain-line {
@@ -889,12 +922,20 @@ p {
   font-size: 0.46rem;
 }
 
+.reinforcement-list.dense .movement-keywords-2 .speed-line {
+  width: 27px;
+}
+
 .reinforcement-list.dense .ability-line {
   top: 19px;
   right: 3px;
   width: 18px;
   height: 22px;
   font-size: 0.45rem;
+}
+
+.reinforcement-list.dense .ability-keywords-2 .ability-line {
+  width: 27px;
 }
 
 .reinforcement-list.dense .terrain-line {
@@ -1063,6 +1104,10 @@ p {
   gap: 2px;
 }
 
+.hover-unit-preview .movement-keywords-2 .speed-line {
+  width: 64px;
+}
+
 .hover-unit-preview .ability-line {
   top: 66px;
   right: 10px;
@@ -1070,6 +1115,10 @@ p {
   height: 48px;
   font-size: 1.08rem;
   gap: 3px;
+}
+
+.hover-unit-preview .ability-keywords-2 .ability-line {
+  width: 64px;
 }
 
 .hover-unit-preview .unit-icon {
@@ -1180,11 +1229,19 @@ p {
   gap: 4px;
 }
 
+.unit-preview .movement-keywords-2 .speed-line {
+  width: 96px;
+}
+
 .unit-preview .ability-line {
   top: 107px;
   right: 16px;
   width: 68px;
   font-size: 0.95rem;
+}
+
+.unit-preview .ability-keywords-2 .ability-line {
+  width: 96px;
 }
 
 .unit-preview .terrain-line {

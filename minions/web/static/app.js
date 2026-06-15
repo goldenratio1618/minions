@@ -298,13 +298,15 @@ function unitToken(unit, preview = false) {
   const defenseIcon = stats.persistent ? svgIcon("anchor") : svgIcon("shield");
   const defenseInner = `<span class="stat-value health-value ${healthClass(unit)}">${currentHealth(unit)}</span>${defenseIcon}`;
   const defense = stats.ward ? `<span class="warded">${defenseInner}</span>` : defenseInner;
+  const movementKeywordCount = (stats.flying ? 1 : 0) + (stats.lumbering ? 1 : 0);
+  const abilityKeywordCount = (stats.spawn ? 1 : 0) + (stats.blink ? 1 : 0);
   const ability = [
     stats.spawn ? "⬡→⬡" : "",
     stats.blink ? "✦" : "",
   ].filter(Boolean).join("");
   const terrain = (stats.terrainSpawn || tpl.terrainSpawn || []).map((kind) => kind.slice(0, 4).toUpperCase()).join(" ");
   return `
-    <div class="unit-token ${preview ? "preview-token" : ""} ${unit.team || "yellow"} ${onGraveyard ? "on-graveyard" : ""} ${unit.exhausted ? "exhausted" : ""} ${statusClass}">
+    <div class="unit-token ${preview ? "preview-token" : ""} ${unit.team || "yellow"} ${onGraveyard ? "on-graveyard" : ""} ${unit.exhausted ? "exhausted" : ""} movement-keywords-${movementKeywordCount} ability-keywords-${abilityKeywordCount} ${statusClass}">
       <div class="cost-line">$${tpl.cost}/${tpl.rebate}</div>
       <div class="unit-name">${tpl.name}</div>
       <div class="speed-line">${stats.speed} ${speedIcon({ stats })}</div>
