@@ -684,6 +684,7 @@ p {
 
 .panel-research {
   grid-area: research;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .panel-spells {
@@ -718,6 +719,22 @@ p {
 .compact-list {
   display: grid;
   gap: 7px;
+}
+
+.research-actions {
+  align-self: start;
+}
+
+.research-list {
+  height: 100%;
+  min-height: 150px;
+  align-content: stretch;
+}
+
+.research-empty {
+  min-height: 100%;
+  box-sizing: border-box;
+  align-content: start;
 }
 
 .scroll-list {

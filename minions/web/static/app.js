@@ -421,11 +421,11 @@ function renderGame() {
         </section>
         <section class="side-section panel-research">
           <h3>Research & Buy</h3>
-          <div class="mini-actions">
+          <div class="mini-actions research-actions">
             <button onclick="action('research')">Research $1</button>
             <button onclick="action('buy', {board:${state.board}, templateId:'zombie'})">Buy Zombie $2</button>
           </div>
-          <div class="compact-list">${renderResearch()}</div>
+          <div class="compact-list research-list">${renderResearch()}</div>
         </section>
         <section class="side-section panel-spells">
           <h3>Spells</h3>
@@ -986,7 +986,7 @@ function renderReinforcements(b) {
 
 function renderResearch() {
   const researched = team().researched || [];
-  if (!researched.length) return '<div class="mini-card">No researched minions yet.</div>';
+  if (!researched.length) return '<div class="mini-card research-empty">No researched minions yet.</div>';
   return researched.map((unit) => `
     <div class="mini-card">
       <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
