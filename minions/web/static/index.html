@@ -9,44 +9,20 @@
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div>
-          <h1>Minions of Darkness</h1>
-          <p id="subtitle">Raise, research, reposition, and ruin everything politely.</p>
-        </div>
-        <form id="session-form" class="session-form">
-          <label>
-            Boards
-            <input id="boards-input" type="number" min="1" max="9" value="1" />
-          </label>
-          <label>
-            Your Color
-            <select id="color-input">
-              <option value="yellow">Yellow</option>
-              <option value="blue">Blue</option>
-            </select>
-          </label>
-          <button type="button" id="create-game">New Game vs Players</button>
-          <button type="button" id="play-ai">Play vs AI</button>
-          <label>
-            Code
-            <input id="code-input" maxlength="6" autocomplete="off" />
-          </label>
-          <button type="button" id="join-game">Join</button>
-        </form>
+        <details class="view-menu">
+          <summary aria-label="Open navigation menu">☰</summary>
+          <nav class="tabs">
+            <button class="tab active" data-view="play">Gameplay</button>
+            <button class="tab" data-view="maps">Map Lab</button>
+            <button class="tab" data-view="units">Unit Lab</button>
+          </nav>
+        </details>
       </header>
 
       <section id="notice" class="notice"></section>
 
-      <nav class="tabs">
-        <button class="tab active" data-view="play">Gameplay</button>
-        <button class="tab" data-view="maps">Map Lab</button>
-        <button class="tab" data-view="units">Unit Lab</button>
-      </nav>
-
       <section id="play-view" class="view active">
-        <div id="game-root" class="game-root empty-state">
-          Create or join a game to start.
-        </div>
+        <div id="game-root" class="game-root empty-state"></div>
       </section>
 
       <section id="maps-view" class="view">

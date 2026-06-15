@@ -82,27 +82,15 @@ p {
 
 .topbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-start;
   gap: 24px;
-  padding-bottom: 14px;
-  border-bottom: 2px solid var(--line);
-}
-
-.topbar h1 {
-  font-size: 2rem;
-}
-
-#subtitle {
-  color: var(--muted);
-  margin-top: 3px;
+  padding-bottom: 8px;
 }
 
 .session-form {
-  display: flex;
-  align-items: end;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  gap: 12px;
 }
 
 .session-form label {
@@ -110,6 +98,22 @@ p {
   gap: 3px;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.session-primary-row,
+.session-join-row {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.session-card {
+  width: min(620px, 100%);
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
 }
 
 .session-form input {
@@ -125,14 +129,16 @@ p {
 }
 
 .tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+  padding: 8px;
 }
 
 .tab {
   background: #fffaf0;
   color: var(--ink);
+  text-align: left;
 }
 
 .tab.active {
@@ -148,6 +154,40 @@ p {
   display: block;
 }
 
+.view-menu {
+  position: relative;
+}
+
+.view-menu summary {
+  width: 38px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #7c674f;
+  border-radius: 7px;
+  background: #2f251b;
+  color: #fffaf0;
+  cursor: pointer;
+  font-size: 1.25rem;
+  font-weight: 900;
+  list-style: none;
+}
+
+.view-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.view-menu .tabs {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 12px 24px rgba(36, 26, 19, 0.18);
+}
+
 .empty-state {
   min-height: 320px;
   display: grid;
@@ -155,6 +195,11 @@ p {
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--muted);
+}
+
+.session-empty {
+  align-content: center;
+  justify-items: center;
 }
 
 .game-layout {
@@ -179,6 +224,7 @@ p {
 }
 
 .status-strip {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
@@ -196,6 +242,19 @@ p {
   background: #efe1c8;
   padding: 0.32rem 0.58rem;
   font-weight: 700;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+
+.ui-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .board-selector {
@@ -670,8 +729,8 @@ p {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
     "reinforcements hover"
-    "research actions"
-    "spells log";
+    "research spells"
+    "research spells";
   gap: 12px;
   padding: 12px;
 }
@@ -689,20 +748,13 @@ p {
 
 .panel-spells {
   grid-area: spells;
+  min-height: 430px;
 }
 
 .panel-hover {
   grid-area: hover;
   align-self: stretch;
   min-height: calc(var(--top-inspector-card-height) + 32px);
-}
-
-.panel-actions {
-  grid-area: actions;
-}
-
-.panel-log {
-  grid-area: log;
 }
 
 .side-section {
@@ -743,7 +795,7 @@ p {
 }
 
 .spells-scroll {
-  max-height: 260px;
+  max-height: 398px;
 }
 
 .actions-scroll {
@@ -802,7 +854,8 @@ p {
   min-height: var(--top-inspector-card-height);
 }
 
-.panel-reinforcements .mini-card {
+.panel-reinforcements .mini-card,
+.research-bench-list .mini-card {
   justify-items: start;
 }
 
@@ -1011,6 +1064,38 @@ p {
   overflow: auto;
   font-size: 0.83rem;
   color: var(--muted);
+}
+
+.history-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 10px;
+  z-index: 80;
+  width: min(460px, calc(100vw - 36px));
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 32px rgba(36, 26, 19, 0.2);
+}
+
+.history-popover[hidden] {
+  display: none;
+}
+
+.history-popover h3 {
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+}
+
+.history-popover .actions-scroll {
+  max-height: 190px;
+}
+
+.history-popover .log {
+  max-height: 150px;
 }
 
 .hover-card {
@@ -1308,10 +1393,8 @@ pre {
     grid-template-areas:
       "reinforcements"
       "research"
-      "spells"
       "hover"
-      "actions"
-      "log";
+      "spells";
   }
 
   .map-wrap {

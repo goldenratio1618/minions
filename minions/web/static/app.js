@@ -12,12 +12,13 @@ const state = {
   dragGhost: null,
   mapPan: null,
   mapZoom: Math.min(2.4, Math.max(0.55, Number(localStorage.getItem("minions-map-zoom")) || 1)),
-  mapScroll: {},
+  mapViews: {},
   pathPreview: [],
   suppressClick: false,
   vsAI: false,
   aiColor: null,
   aiThinking: false,
+  historyOpen: false,
 };
 
 const HEX_WIDTH = 80;
@@ -104,14 +105,18 @@ function resetInteractionState() {
 
 async function refreshGame() {
   if (!state.game) return;
+  const mapView = currentMapViewSnapshot();
   const data = await api(`/api/games/${state.game.code}`);
   state.game = data.game;
   if (state.board >= state.game.boards.length) state.board = 0;
+  if (mapView && Number.isFinite(mapView.zoom)) state.mapZoom = mapView.zoom;
   renderGame();
+  restoreCapturedMapView(mapView);
 }
 
 async function action(actionName, payload = {}) {
   if (!state.game) return;
+  const mapView = currentMapViewSnapshot();
   try {
     const data = await api(`/api/games/${state.game.code}/actions`, {
       method: "POST",
@@ -119,14 +124,18 @@ async function action(actionName, payload = {}) {
     });
     state.game = data.game;
     state.pathPreview = data.result && data.result.path ? data.result.path : [];
+    if (mapView && Number.isFinite(mapView.zoom)) state.mapZoom = mapView.zoom;
     renderGame();
+    restoreCapturedMapView(mapView);
     notice("Done.", true);
     await maybeAutoPlayAI();
   } catch (err) {
     resetInteractionState();
     if (err.data && err.data.game) {
       state.game = err.data.game;
+      if (mapView && Number.isFinite(mapView.zoom)) state.mapZoom = mapView.zoom;
       renderGame();
+      restoreCapturedMapView(mapView);
     } else {
       try {
         await refreshGame();
@@ -140,6 +149,7 @@ async function action(actionName, payload = {}) {
 
 async function aiTurn(color = state.color, silent = false) {
   if (!state.game) return;
+  const mapView = currentMapViewSnapshot();
   try {
     state.aiThinking = true;
     renderGame();
@@ -151,13 +161,17 @@ async function aiTurn(color = state.color, silent = false) {
     state.game = data.game;
     state.pathPreview = [];
     state.aiThinking = false;
+    if (mapView && Number.isFinite(mapView.zoom)) state.mapZoom = mapView.zoom;
     renderGame();
+    restoreCapturedMapView(mapView);
     const count = data.result && data.result.actions ? data.result.actions.length : 0;
     const elapsed = data.result && data.result.elapsedSeconds ? data.result.elapsedSeconds.toFixed(2) : "0.00";
     notice(`AI played ${count} action${count === 1 ? "" : "s"} in ${elapsed}s.`, true);
   } catch (err) {
     state.aiThinking = false;
+    if (mapView && Number.isFinite(mapView.zoom)) state.mapZoom = mapView.zoom;
     renderGame();
+    restoreCapturedMapView(mapView);
     notice(err.message);
   }
 }
@@ -228,6 +242,15 @@ function svgIcon(name, extraClass = "") {
     lumbering: `<svg ${attrs}><circle cx="7" cy="5" r="2.2"/><path d="M7 8v8M7 10l12 1M7 16l-3 5M8 16l4 5" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   };
   return icons[name] || "";
+}
+
+function notebookIcon() {
+  return `
+    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M7 4h10a2 2 0 012 2v14H7a2 2 0 01-2-2V6a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M9 4v16M12 8h4M12 12h4M12 16h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+  `;
 }
 
 function attackIcon(range, extraClass = "") {
@@ -349,39 +372,175 @@ function setMode(mode) {
   renderGame();
 }
 
-function mapScrollKey(index = state.board) {
+function mapViewKey(index = state.board) {
   return state.game ? `${state.game.code}:${index}` : `board:${index}`;
 }
 
-function captureMapScroll() {
-  const wrap = document.querySelector(".map-wrap[data-map-wrap]");
+function saveMapView(wrap) {
   if (!wrap || !state.game) return;
   const index = Number(wrap.dataset.boardIndex || state.board);
-  state.mapScroll[mapScrollKey(index)] = {
+  state.mapViews[mapViewKey(index)] = {
     left: wrap.scrollLeft,
     top: wrap.scrollTop,
+    zoom: state.mapZoom,
   };
 }
 
-function restoreMapScroll() {
+function currentMapViewSnapshot() {
+  const wrap = document.querySelector(".map-wrap[data-map-wrap]");
+  if (!wrap || !state.game) return null;
+  const index = Number(wrap.dataset.boardIndex || state.board);
+  return {
+    index,
+    left: wrap.scrollLeft,
+    top: wrap.scrollTop,
+    zoom: state.mapZoom,
+  };
+}
+
+function restoreCapturedMapView(snapshot) {
+  if (!snapshot || !state.game) return;
+  state.mapViews[mapViewKey(snapshot.index)] = {
+    left: snapshot.left,
+    top: snapshot.top,
+    zoom: snapshot.zoom,
+  };
+  restoreMapView();
+}
+
+function captureMapView() {
+  const wrap = document.querySelector(".map-wrap[data-map-wrap]");
+  saveMapView(wrap);
+}
+
+function applySavedMapZoom() {
+  const saved = state.mapViews[mapViewKey()];
+  if (saved && Number.isFinite(saved.zoom)) {
+    state.mapZoom = saved.zoom;
+  }
+}
+
+function restoreMapView() {
   const wrap = document.querySelector(".map-wrap[data-map-wrap]");
   if (!wrap || !state.game) return;
-  const saved = state.mapScroll[mapScrollKey()];
+  const saved = state.mapViews[mapViewKey()];
   if (!saved) return;
   requestAnimationFrame(() => {
-    wrap.scrollLeft = saved.left;
-    wrap.scrollTop = saved.top;
+    requestAnimationFrame(() => {
+      wrap.scrollLeft = saved.left;
+      wrap.scrollTop = saved.top;
+    });
+  });
+}
+
+function sessionFormHtml() {
+  return `
+    <form id="session-form" class="session-form session-card">
+      <div class="session-primary-row">
+        <label>
+          Boards
+          <input id="boards-input" type="number" min="1" max="9" value="1" />
+        </label>
+        <label>
+          Your Color
+          <select id="color-input">
+            <option value="yellow">Yellow</option>
+            <option value="blue">Blue</option>
+          </select>
+        </label>
+        <button type="button" id="create-game">New Game vs Players</button>
+        <button type="button" id="play-ai">Play vs AI</button>
+      </div>
+      <div class="session-join-row">
+        <label>
+          Code
+          <input id="code-input" maxlength="6" autocomplete="off" />
+        </label>
+        <button type="button" id="join-game">Join</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderEmptyGame() {
+  const root = $("game-root");
+  root.className = "game-root empty-state session-empty";
+  root.innerHTML = sessionFormHtml();
+  wireSessionForm();
+}
+
+function wireSessionForm() {
+  const colorInput = $("color-input");
+  const createGame = $("create-game");
+  const playAI = $("play-ai");
+  const joinGame = $("join-game");
+  if (!colorInput || !createGame || createGame.dataset.wired) return;
+  createGame.dataset.wired = "true";
+  playAI.dataset.wired = "true";
+  joinGame.dataset.wired = "true";
+  colorInput.value = state.color;
+  colorInput.addEventListener("change", (event) => {
+    state.color = event.target.value;
+    localStorage.setItem("minions-color", state.color);
+    if (state.vsAI) state.aiColor = opponentColor();
+    renderGame();
+  });
+  createGame.addEventListener("click", async () => {
+    try {
+      configureHumanGame(colorInput.value);
+      const data = await api("/api/games", {
+        method: "POST",
+        body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
+      });
+      state.game = data.game;
+      renderGame();
+      notice(`Created players game ${state.game.code}.`, true);
+    } catch (err) {
+      notice(err.message);
+    }
+  });
+  playAI.addEventListener("click", async () => {
+    try {
+      configureAIGame(colorInput.value);
+      const data = await api("/api/games", {
+        method: "POST",
+        body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
+      });
+      state.game = data.game;
+      renderGame();
+      notice(`Started game ${state.game.code}. You are ${state.color}; AI is ${state.aiColor}.`, true);
+      await maybeAutoPlayAI();
+    } catch (err) {
+      state.aiThinking = false;
+      renderGame();
+      notice(err.message);
+    }
+  });
+  joinGame.addEventListener("click", async () => {
+    try {
+      configureHumanGame(colorInput.value);
+      const code = $("code-input").value.trim().toUpperCase();
+      const data = await api(`/api/games/${code}/join`, {
+        method: "POST",
+        body: JSON.stringify({ color: state.color, name: state.color }),
+      });
+      state.game = data.game;
+      renderGame();
+      notice(`Joined ${code} as ${state.color}.`, true);
+    } catch (err) {
+      notice(err.message);
+    }
   });
 }
 
 function renderGame() {
   const root = $("game-root");
   if (!state.game) {
-    root.className = "game-root empty-state";
-    root.textContent = "Create or join a game to start.";
+    renderEmptyGame();
     return;
   }
-  captureMapScroll();
+  captureMapView();
+  applySavedMapZoom();
   root.className = "game-root";
   const currentBoard = board();
   const active = state.game.turn === state.color && !state.aiThinking;
@@ -399,6 +558,17 @@ function renderGame() {
         <span class="status-pill">Yellow $${state.game.teams.yellow.souls}</span>
         <span class="status-pill">Blue $${state.game.teams.blue.souls}</span>
         <span class="status-pill">Mana ${team().mana}</span>
+        <button id="history-toggle" class="icon-button secondary" type="button" aria-expanded="${state.historyOpen ? "true" : "false"}" aria-controls="history-popover" title="Turn actions and log">${notebookIcon()}</button>
+      </div>
+      <div id="history-popover" class="history-popover" ${state.historyOpen ? "" : "hidden"}>
+        <section>
+          <h3>Turn Actions</h3>
+          <div class="compact-list scroll-list actions-scroll">${renderTurnHistory()}</div>
+        </section>
+        <section>
+          <h3>Log</h3>
+          <div class="log">${state.game.log.slice().reverse().map((line) => `<div>${line}</div>`).join("")}</div>
+        </section>
       </div>
     </div>
     <div class="game-layout">
@@ -435,17 +605,17 @@ function renderGame() {
           <h3>Hover</h3>
           <div id="hover-card" class="hover-card mini-card">Hover a tile to inspect it.</div>
         </section>
-        <section class="side-section panel-actions">
-          <h3>Turn Actions</h3>
-          <div class="compact-list scroll-list actions-scroll">${renderTurnHistory()}</div>
-        </section>
-        <section class="side-section panel-log">
-          <h3>Log</h3>
-          <div class="log">${state.game.log.slice().reverse().map((line) => `<div>${line}</div>`).join("")}</div>
-        </section>
       </aside>
     </div>
   `;
+  const historyToggle = $("history-toggle");
+  if (historyToggle) {
+    historyToggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.historyOpen = !state.historyOpen;
+      renderGame();
+    });
+  }
   document.querySelectorAll("[data-board]").forEach((button) => {
     button.addEventListener("click", () => {
       state.board = Number(button.dataset.board);
@@ -457,10 +627,10 @@ function renderGame() {
     });
   });
   document.querySelectorAll(".bench-unit[data-template]").forEach((button) => {
-    button.addEventListener("pointerdown", (event) => handleBenchPointerDown(event, button.dataset.template));
+    button.addEventListener("pointerdown", (event) => handleBenchPointerDown(event, button.dataset.template, button.dataset.source || "reinforcement"));
   });
   wireMapInteractions();
-  restoreMapScroll();
+  restoreMapView();
 }
 
 function findTemplate(templateId) {
@@ -561,6 +731,7 @@ function applyMapZoom(wrap, nextZoom, clientX, clientY) {
   if (inner) inner.style.transform = `scale(${zoom})`;
   wrap.scrollLeft = anchorX * zoom - offsetX;
   wrap.scrollTop = anchorY * zoom - offsetY;
+  saveMapView(wrap);
 }
 
 function handleMapWheel(event) {
@@ -802,10 +973,10 @@ function handleHexPointerDown(event, q, r, unitId) {
   event.preventDefault();
 }
 
-function handleBenchPointerDown(event, templateId) {
+function handleBenchPointerDown(event, templateId, source = "reinforcement") {
   if (event.button !== 0 || state.game.turn !== state.color || state.selectedCard) return;
   state.drag = {
-    kind: "reinforcement",
+    kind: source === "research" ? "research" : "reinforcement",
     templateId,
     startKey: null,
     lastKey: null,
@@ -907,6 +1078,7 @@ function handlePointerUp(event) {
   if (state.mapPan) {
     const panned = state.mapPan.moved;
     state.mapPan.wrap.classList.remove("panning");
+    saveMapView(state.mapPan.wrap);
     state.mapPan = null;
     if (panned) {
       state.suppressClick = true;
@@ -962,6 +1134,11 @@ function handlePointerUp(event) {
     const r = Number(hex.dataset.r);
     state.suppressClick = true;
     action("spawn", { board: state.board, templateId: drag.templateId, q, r });
+  } else if (drag.kind === "research") {
+    if (dropZone && dropZone.dataset.dropZone === "reinforcements") {
+      state.suppressClick = true;
+      action("buy", { board: state.board, templateId: drag.templateId });
+    }
   }
   if (state.suppressClick) {
     setTimeout(() => {
@@ -987,14 +1164,15 @@ function renderReinforcements(b) {
 function renderResearch() {
   const researched = team().researched || [];
   if (!researched.length) return '<div class="mini-card research-empty">No researched minions yet.</div>';
-  return researched.map((unit) => `
+  const densityClass = researched.length >= 2 ? "dense" : "single";
+  return `<div class="reinforcement-list research-bench-list ${densityClass} ${researched.length > 6 ? "scrollable" : ""}">${researched.map((unit) => `
     <div class="mini-card">
       <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
-      <button class="bench-unit" type="button" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onclick="action('buy', {board:${state.board}, templateId:'${unit.id}'})">${unitToken({ ...unit, team: state.color })}</button>
-      <div>${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
-      <button class="secondary" onclick="action('buy', {board:${state.board}, templateId:'${unit.id}'})">Buy</button>
+      <button class="bench-unit" type="button" data-template="${unit.id}" data-source="research" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onclick="action('buy', {board:${state.board}, templateId:'${unit.id}'})">${unitToken({ ...unit, team: state.color })}</button>
+      <div class="bench-stats">${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
+      <div class="muted bench-help">Click or drag to Reinforcements to buy.</div>
     </div>
-  `).join("");
+  `).join("")}</div>`;
 }
 
 function renderHand(b = board()) {
@@ -1138,65 +1316,6 @@ document.querySelectorAll(".tab").forEach((tab) => {
 document.addEventListener("pointermove", handlePointerMove);
 document.addEventListener("pointerup", handlePointerUp);
 
-$("color-input").value = state.color;
-$("color-input").addEventListener("change", (event) => {
-  state.color = event.target.value;
-  localStorage.setItem("minions-color", state.color);
-  if (state.vsAI) state.aiColor = opponentColor();
-  renderGame();
-});
-
-$("create-game").addEventListener("click", async () => {
-  try {
-    configureHumanGame($("color-input").value);
-    const data = await api("/api/games", {
-      method: "POST",
-      body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
-    });
-    state.game = data.game;
-    $("code-input").value = state.game.code;
-    renderGame();
-    notice(`Created players game ${state.game.code}.`, true);
-  } catch (err) {
-    notice(err.message);
-  }
-});
-
-$("play-ai").addEventListener("click", async () => {
-  try {
-    configureAIGame($("color-input").value);
-    const data = await api("/api/games", {
-      method: "POST",
-      body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
-    });
-    state.game = data.game;
-    $("code-input").value = state.game.code;
-    renderGame();
-    notice(`Started game ${state.game.code}. You are ${state.color}; AI is ${state.aiColor}.`, true);
-    await maybeAutoPlayAI();
-  } catch (err) {
-    state.aiThinking = false;
-    renderGame();
-    notice(err.message);
-  }
-});
-
-$("join-game").addEventListener("click", async () => {
-  try {
-    configureHumanGame($("color-input").value);
-    const code = $("code-input").value.trim().toUpperCase();
-    const data = await api(`/api/games/${code}/join`, {
-      method: "POST",
-      body: JSON.stringify({ color: state.color, name: state.color }),
-    });
-    state.game = data.game;
-    renderGame();
-    notice(`Joined ${code} as ${state.color}.`, true);
-  } catch (err) {
-    notice(err.message);
-  }
-});
-
 $("generate-map").addEventListener("click", async () => {
   try {
     const data = await api("/api/generators/map");
@@ -1224,3 +1343,5 @@ window.setMode = setMode;
 window.selectCardById = selectCardById;
 window.updateHoverUnitTemplate = updateHoverUnitTemplate;
 window.state = state;
+
+renderGame();
