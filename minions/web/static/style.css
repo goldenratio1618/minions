@@ -536,9 +536,9 @@ p {
 
 .speed-line {
   position: absolute;
-  left: 3px;
+  left: 6px;
   top: 25px;
-  width: 22px;
+  width: 19px;
   text-align: center;
   font-weight: 800;
   font-size: 0.55rem;
@@ -552,9 +552,9 @@ p {
 
 .ability-line {
   position: absolute;
-  right: 3px;
+  right: 6px;
   top: 21px;
-  width: 23px;
+  width: 20px;
   height: 24px;
   display: flex;
   flex-direction: column;
@@ -569,11 +569,11 @@ p {
 }
 
 .unit-token.movement-keywords-2 .speed-line {
-  width: 34px;
+  width: 31px;
 }
 
 .unit-token.ability-keywords-2 .ability-line {
-  width: 34px;
+  width: 31px;
 }
 
 .terrain-line {
@@ -665,6 +665,7 @@ p {
 }
 
 .side-panel {
+  --top-inspector-card-height: clamp(500px, 38.6vw, 556px);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
@@ -781,7 +782,7 @@ p {
 
 .panel-reinforcements > .compact-list {
   height: 100%;
-  min-height: 252px;
+  min-height: var(--top-inspector-card-height);
 }
 
 .panel-reinforcements .mini-card {
@@ -796,7 +797,7 @@ p {
 .reinforcement-list.single {
   grid-template-columns: 1fr;
   height: 100%;
-  min-height: 252px;
+  min-height: var(--top-inspector-card-height);
 }
 
 .reinforcement-list.dense {
@@ -838,7 +839,7 @@ p {
 .reinforcement-list.single .mini-card,
 .panel-reinforcements > .compact-list > .mini-card {
   height: 100%;
-  min-height: 252px;
+  min-height: var(--top-inspector-card-height);
   box-sizing: border-box;
 }
 
@@ -856,25 +857,25 @@ p {
 
 .reinforcement-list.single .speed-line {
   top: 42px;
-  left: 9px;
-  width: 31px;
+  left: 13px;
+  width: 27px;
   font-size: 0.78rem;
 }
 
 .reinforcement-list.single .movement-keywords-2 .speed-line {
-  width: 48px;
+  width: 44px;
 }
 
 .reinforcement-list.single .ability-line {
   top: 34px;
-  right: 8px;
-  width: 32px;
+  right: 13px;
+  width: 27px;
   height: 34px;
   font-size: 0.78rem;
 }
 
 .reinforcement-list.single .ability-keywords-2 .ability-line {
-  width: 48px;
+  width: 44px;
 }
 
 .reinforcement-list.single .terrain-line {
@@ -917,25 +918,25 @@ p {
 
 .reinforcement-list.dense .speed-line {
   top: 23px;
-  left: 3px;
-  width: 18px;
+  left: 5px;
+  width: 16px;
   font-size: 0.46rem;
 }
 
 .reinforcement-list.dense .movement-keywords-2 .speed-line {
-  width: 27px;
+  width: 25px;
 }
 
 .reinforcement-list.dense .ability-line {
   top: 19px;
-  right: 3px;
-  width: 18px;
+  right: 5px;
+  width: 16px;
   height: 22px;
   font-size: 0.45rem;
 }
 
 .reinforcement-list.dense .ability-keywords-2 .ability-line {
-  width: 27px;
+  width: 25px;
 }
 
 .reinforcement-list.dense .terrain-line {
@@ -996,7 +997,9 @@ p {
 }
 
 .hover-card {
-  min-height: 252px;
+  height: var(--top-inspector-card-height);
+  min-height: var(--top-inspector-card-height);
+  box-sizing: border-box;
   overflow: hidden;
   align-content: start;
 }
@@ -1098,27 +1101,27 @@ p {
 
 .hover-unit-preview .speed-line {
   top: 77px;
-  left: 11px;
-  width: 44px;
+  left: 17px;
+  width: 38px;
   font-size: 1.05rem;
   gap: 2px;
 }
 
 .hover-unit-preview .movement-keywords-2 .speed-line {
-  width: 64px;
+  width: 58px;
 }
 
 .hover-unit-preview .ability-line {
   top: 66px;
-  right: 10px;
-  width: 44px;
+  right: 17px;
+  width: 38px;
   height: 48px;
   font-size: 1.08rem;
   gap: 3px;
 }
 
 .hover-unit-preview .ability-keywords-2 .ability-line {
-  width: 64px;
+  width: 58px;
 }
 
 .hover-unit-preview .unit-icon {
@@ -1223,25 +1226,25 @@ p {
 
 .unit-preview .speed-line {
   top: 121px;
-  left: 18px;
-  width: 68px;
+  left: 27px;
+  width: 59px;
   font-size: 1.15rem;
   gap: 4px;
 }
 
 .unit-preview .movement-keywords-2 .speed-line {
-  width: 96px;
+  width: 87px;
 }
 
 .unit-preview .ability-line {
   top: 107px;
-  right: 16px;
-  width: 68px;
+  right: 27px;
+  width: 59px;
   font-size: 0.95rem;
 }
 
 .unit-preview .ability-keywords-2 .ability-line {
-  width: 96px;
+  width: 87px;
 }
 
 .unit-preview .terrain-line {
