@@ -128,7 +128,7 @@ async function action(actionName, payload = {}) {
     renderGame();
     restoreCapturedMapView(mapView);
     notice("Done.", true);
-    await maybeAutoPlayAI();
+    await maybeAutoPlayAI(mapView);
   } catch (err) {
     resetInteractionState();
     if (err.data && err.data.game) {
@@ -147,9 +147,9 @@ async function action(actionName, payload = {}) {
   }
 }
 
-async function aiTurn(color = state.color, silent = false) {
+async function aiTurn(color = state.color, silent = false, preservedMapView = null) {
   if (!state.game) return;
-  const mapView = currentMapViewSnapshot();
+  const mapView = preservedMapView || currentMapViewSnapshot();
   try {
     state.aiThinking = true;
     renderGame();
@@ -176,10 +176,10 @@ async function aiTurn(color = state.color, silent = false) {
   }
 }
 
-async function maybeAutoPlayAI() {
+async function maybeAutoPlayAI(preservedMapView = null) {
   if (!state.vsAI || !state.game || state.aiThinking || state.game.winner) return;
   while (state.vsAI && state.game && state.game.turn === state.aiColor && !state.game.winner) {
-    await aiTurn(state.aiColor, true);
+    await aiTurn(state.aiColor, true, preservedMapView);
   }
 }
 
@@ -425,7 +425,11 @@ function restoreMapView() {
   if (!wrap || !state.game) return;
   const saved = state.mapViews[mapViewKey()];
   if (!saved) return;
+  wrap.scrollLeft = saved.left;
+  wrap.scrollTop = saved.top;
   requestAnimationFrame(() => {
+    wrap.scrollLeft = saved.left;
+    wrap.scrollTop = saved.top;
     requestAnimationFrame(() => {
       wrap.scrollLeft = saved.left;
       wrap.scrollTop = saved.top;
