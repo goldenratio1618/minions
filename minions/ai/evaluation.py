@@ -17,6 +17,7 @@ class EvaluationWeights:
     mana: float = 2.4
     card: float = 4.5
     researched: float = 0.30
+    subscription: float = 0.20
     reinforcement: float = 0.46
     material: float = 1.64
     graveyard: float = 80.0
@@ -48,6 +49,8 @@ def _team_score(game: Game, color: str, weights: EvaluationWeights) -> float:
     score += sum(unit_template_value(unit) * weights.researched for unit in team.researched.values())
     for board in game.boards:
         score += _board_team_score(game, board, color, weights)
+        for subscription in board.subscriptions[color]:
+            score += unit_template_value(game.template(subscription.template_id)) * weights.subscription
     return score
 
 

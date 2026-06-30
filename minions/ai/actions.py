@@ -7,8 +7,11 @@ from typing import Iterable, List, Optional, Sequence, Set
 from minions.rules.constants import Phase, TERRAIN_LABELS
 from minions.rules.coords import Hex, all_hexes, distance, neighbors
 from minions.rules.game import (
+    GAME_MODE_SUBSCRIPTIONS,
     Game,
+    RESEARCH_COST,
     RuleError,
+    SUBSCRIPTION_AMOUNTS,
     apply_action,
     is_empty,
     is_unit_spawn_destination,
@@ -116,9 +119,34 @@ def _economy_candidates(game: Game, color: str, categories: Optional[Set[str]]) 
         return []
     team = game.teams[color]
     candidates: List[ActionCandidate] = []
-    if team.souls >= 1:
+    if team.souls >= RESEARCH_COST and not team.oversubscribed:
         candidates.append(ActionCandidate("research", {}, "economy", description="research a minion"))
-    buyable = ["zombie"] + sorted(team.researched.keys())
+    if game.mode == GAME_MODE_SUBSCRIPTIONS:
+        for board in game.boards:
+            subscribed_on_board = {
+                subscription.template_id
+                for subscription in board.subscriptions[color]
+            }
+            for template_id in sorted(team.researched.keys()):
+                if template_id in subscribed_on_board:
+                    continue
+                template = game.template(template_id)
+                for amount in reversed(SUBSCRIPTION_AMOUNTS):
+                    if amount * game.subscription_length / template.cost < 0.5:
+                        continue
+                    candidates.append(
+                        ActionCandidate(
+                            "subscribe",
+                            {"board": board.index, "templateId": template_id, "amount": amount},
+                            "economy",
+                            board.index,
+                            f"subscribe to {template.name}",
+                        )
+                    )
+                    break
+        buyable = ["zombie"]
+    else:
+        buyable = ["zombie"] + sorted(team.researched.keys())
     for board in game.boards:
         for template_id in buyable:
             template = game.template(template_id)

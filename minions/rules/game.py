@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import random
 import secrets
 import string
@@ -26,6 +27,17 @@ from .units import (
 
 class RuleError(ValueError):
     pass
+
+
+GAME_MODE_RANDOM_UNITS = "random_units"
+GAME_MODE_SUBSCRIPTIONS = "subscriptions"
+GAME_MODE_LABELS = {
+    GAME_MODE_RANDOM_UNITS: "Random Units",
+    GAME_MODE_SUBSCRIPTIONS: "Subscriptions",
+}
+SUBSCRIPTION_AMOUNTS = (2, 3, 5, 8, 13)
+DEFAULT_SUBSCRIPTION_LENGTH = 5
+RESEARCH_COST = 2
 
 
 @dataclass
@@ -61,6 +73,8 @@ class TeamState:
     deck: List[str] = field(default_factory=build_deck)
     hand: List[dict] = field(default_factory=list)
     players: List[str] = field(default_factory=list)
+    turns_started: int = 0
+    oversubscribed: bool = False
 
     def draw_card(self) -> dict:
         if not self.deck:
@@ -80,7 +94,21 @@ class TeamState:
             "hand": [serialize_card(card) for card in self.hand],
             "deckCount": len(self.deck),
             "players": list(self.players),
+            "turnsStarted": self.turns_started,
+            "oversubscribed": self.oversubscribed,
         }
+
+
+@dataclass
+class Subscription:
+    id: str
+    team: str
+    template_id: str
+    amount: int
+    cost: int
+    total_units: float
+    purchased_team_turn: int
+    purchased_count: int = 0
 
 
 @dataclass
@@ -89,6 +117,7 @@ class BoardState:
     map: BoardMap
     units: Dict[str, UnitInstance] = field(default_factory=dict)
     reinforcements: Dict[str, List[str]] = field(default_factory=lambda: {"yellow": [], "blue": []})
+    subscriptions: Dict[str, List[Subscription]] = field(default_factory=lambda: {"yellow": [], "blue": []})
     spells: Dict[str, List[dict]] = field(default_factory=lambda: {"yellow": [], "blue": []})
     terrain: Dict[str, Optional[str]] = field(default_factory=lambda: {terrain.value: None for terrain in Terrain})
     spawn_locked: Dict[str, bool] = field(default_factory=lambda: {"yellow": False, "blue": False})
@@ -120,6 +149,10 @@ class BoardState:
                 team: [serialize_card(card) for card in cards]
                 for team, cards in self.spells.items()
             },
+            "subscriptions": {
+                team: [_subscription_to_dict(game, subscription) for subscription in subscriptions]
+                for team, subscriptions in self.subscriptions.items()
+            },
             "terrain": terrain_map,
             "spawnLocked": dict(self.spawn_locked),
             "lastMoverId": self.last_mover_id,
@@ -136,6 +169,8 @@ class Game:
     board_count: int
     boards: List[BoardState]
     teams: Dict[str, TeamState]
+    mode: str = GAME_MODE_RANDOM_UNITS
+    subscription_length: int = DEFAULT_SUBSCRIPTION_LENGTH
     turn: str = "yellow"
     phase: str = Phase.SPAWN.value
     scores: Dict[str, int] = field(default_factory=lambda: {"yellow": 0, "blue": 0})
@@ -172,6 +207,11 @@ class Game:
             "turn": self.turn,
             "phase": self.phase,
             "turnNumber": self.turn_number,
+            "mode": self.mode,
+            "modeLabel": GAME_MODE_LABELS[self.mode],
+            "subscriptionLength": self.subscription_length,
+            "subscriptionAmounts": list(SUBSCRIPTION_AMOUNTS),
+            "researchCost": RESEARCH_COST,
             "scores": dict(self.scores),
             "boardPointsToWin": self.board_points_to_win,
             "winner": self.winner,
@@ -192,20 +232,46 @@ def _code() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(6))
 
 
-def create_game(board_count: int, seed: Optional[int] = None) -> Game:
+def _normalize_game_mode(mode: str) -> str:
+    if mode in GAME_MODE_LABELS:
+        return mode
+    raise RuleError("unknown game mode")
+
+
+def _normalize_subscription_length(length: int) -> int:
+    if not 1 <= length <= 30:
+        raise RuleError("subscription length must be between 1 and 30")
+    return length
+
+
+def create_game(
+    board_count: int,
+    seed: Optional[int] = None,
+    mode: str = GAME_MODE_RANDOM_UNITS,
+    subscription_length: int = DEFAULT_SUBSCRIPTION_LENGTH,
+) -> Game:
     if not 1 <= board_count <= 9:
         raise RuleError("board count must be between 1 and 9")
+    mode = _normalize_game_mode(mode)
+    subscription_length = _normalize_subscription_length(subscription_length)
     rng = random.Random(seed)
     teams = {
-        "yellow": TeamState("yellow", souls=0, deck=build_deck(rng.randrange(1_000_000_000))),
+        "yellow": TeamState("yellow", souls=0, deck=build_deck(rng.randrange(1_000_000_000)), turns_started=1),
         "blue": TeamState("blue", souls=4 * board_count, deck=build_deck(rng.randrange(1_000_000_000))),
     }
-    game = Game(code=_code(), board_count=board_count, boards=[], teams=teams)
+    game = Game(
+        code=_code(),
+        board_count=board_count,
+        boards=[],
+        teams=teams,
+        mode=mode,
+        subscription_length=subscription_length,
+    )
     for index in range(board_count):
         board = BoardState(index=index, map=generate_map(seed=rng.randrange(1_000_000_000)))
         reset_board(game, board, opener="yellow", initial=True)
         game.boards.append(board)
-    game.log.append(f"Game {game.code} created with {board_count} board(s). Yellow goes first.")
+    game.log.append(f"Game {game.code} created with {board_count} board(s) in {GAME_MODE_LABELS[mode]} mode. Yellow goes first.")
     _draw_turn_spells(game, "yellow")
     return game
 
@@ -216,6 +282,8 @@ def _snapshot(game: Game, turn_history: Optional[List[TurnAction]] = None) -> di
         "teams": copy.deepcopy(game.teams),
         "turn": game.turn,
         "phase": game.phase,
+        "mode": game.mode,
+        "subscription_length": game.subscription_length,
         "scores": copy.deepcopy(game.scores),
         "winner": game.winner,
         "turn_number": game.turn_number,
@@ -231,6 +299,8 @@ def _restore_snapshot(game: Game, snapshot: dict, turn_history: Optional[List[Tu
     game.teams = copy.deepcopy(snapshot["teams"])
     game.turn = snapshot["turn"]
     game.phase = snapshot["phase"]
+    game.mode = snapshot.get("mode", GAME_MODE_RANDOM_UNITS)
+    game.subscription_length = snapshot.get("subscription_length", DEFAULT_SUBSCRIPTION_LENGTH)
     game.scores = copy.deepcopy(snapshot["scores"])
     game.winner = snapshot["winner"]
     game.turn_number = snapshot["turn_number"]
@@ -419,6 +489,7 @@ def _prune_unsupported_spawn_dependencies(game: Game, color: str) -> None:
 def reset_board(game: Game, board: BoardState, opener: str, initial: bool = False) -> None:
     board.units.clear()
     board.reinforcements = {"yellow": [], "blue": []}
+    board.subscriptions = {"yellow": [], "blue": []}
     board.terrain = {terrain.value: None for terrain in Terrain}
     board.last_mover_id = None
     board.resigned_by = None
@@ -480,6 +551,112 @@ def terrain_on_hex(board: BoardState, hex_key: str) -> Optional[str]:
         if terrain_hex == hex_key:
             return kind
     return None
+
+
+def _subscription_age(game: Game, subscription: Subscription, turns_started: Optional[int] = None) -> int:
+    team_turns = game.teams[subscription.team].turns_started if turns_started is None else turns_started
+    return max(0, team_turns - subscription.purchased_team_turn)
+
+
+def _subscription_cumulative_units(game: Game, subscription: Subscription, age: int) -> float:
+    if subscription.cost <= 0:
+        return 0.0
+    uncapped = subscription.amount * max(0, age) / subscription.cost
+    return min(subscription.total_units, uncapped)
+
+
+def _subscription_fulfillment_request(game: Game, subscription: Subscription, turns_started: Optional[int] = None) -> float:
+    age = _subscription_age(game, subscription, turns_started=turns_started)
+    return _subscription_cumulative_units(game, subscription, age) - subscription.purchased_count
+
+
+def _subscription_due_count(game: Game, subscription: Subscription, turns_started: int, purchased_count: int) -> int:
+    age = _subscription_age(game, subscription, turns_started=turns_started)
+    cumulative = _subscription_cumulative_units(game, subscription, age)
+    target_count = int(math.floor(cumulative + 0.5))
+    return max(0, target_count - purchased_count)
+
+
+def _subscription_schedule(game: Game, subscription: Subscription, turns: Optional[int] = None) -> List[dict]:
+    horizon = turns or game.subscription_length
+    purchased = subscription.purchased_count
+    schedule = []
+    team_turns = game.teams[subscription.team].turns_started
+    for offset in range(1, horizon + 1):
+        due = _subscription_due_count(game, subscription, team_turns + offset, purchased)
+        purchased += due
+        schedule.append({"turn": offset, "count": due, "spend": due * subscription.cost})
+    return schedule
+
+
+def _subscription_to_dict(game: Game, subscription: Subscription) -> dict:
+    template = game.template(subscription.template_id)
+    return {
+        "id": subscription.id,
+        "team": subscription.team,
+        "templateId": subscription.template_id,
+        "template": template.to_dict(),
+        "amount": subscription.amount,
+        "cost": subscription.cost,
+        "totalUnits": subscription.total_units,
+        "purchasedTeamTurn": subscription.purchased_team_turn,
+        "purchasedCount": subscription.purchased_count,
+        "age": _subscription_age(game, subscription),
+        "fulfillmentRequest": _subscription_fulfillment_request(game, subscription),
+        "schedule": _subscription_schedule(game, subscription),
+    }
+
+
+def _subscription_is_complete(game: Game, subscription: Subscription) -> bool:
+    age = _subscription_age(game, subscription)
+    return age >= game.subscription_length and _subscription_fulfillment_request(game, subscription) < 0.5
+
+
+def _prune_completed_subscriptions(game: Game, color: str) -> None:
+    for board in game.boards:
+        board.subscriptions[color] = [
+            subscription
+            for subscription in board.subscriptions[color]
+            if not _subscription_is_complete(game, subscription)
+        ]
+
+
+def fulfill_subscriptions(game: Game, color: str) -> None:
+    team = game.teams[color]
+    team.oversubscribed = False
+    if game.mode != GAME_MODE_SUBSCRIPTIONS:
+        return
+    skipped = set()
+    purchased = 0
+    oversubscribed = False
+    while True:
+        due: List[Tuple[float, int, Subscription]] = []
+        for board in game.boards:
+            for subscription in board.subscriptions[color]:
+                key = (board.index, subscription.id)
+                if key in skipped:
+                    continue
+                request = _subscription_fulfillment_request(game, subscription)
+                if request >= 0.5:
+                    due.append((request, board.index, subscription))
+        if not due:
+            break
+        request, board_index, subscription = max(due, key=lambda item: (item[0], -item[1], item[2].id))
+        template = game.template(subscription.template_id)
+        if team.souls >= template.cost:
+            team.souls -= template.cost
+            board_at(game, board_index).reinforcements[color].append(template.id)
+            subscription.purchased_count += 1
+            purchased += 1
+        else:
+            skipped.add((board_index, subscription.id))
+            oversubscribed = True
+    team.oversubscribed = oversubscribed
+    _prune_completed_subscriptions(game, color)
+    if purchased:
+        game.log.append(f"{color.title()} received {purchased} subscribed unit(s).")
+    if oversubscribed:
+        game.log.append(f"{color.title()} was oversubscribed; research is unavailable this turn.")
 
 
 def is_empty(game: Game, board: BoardState, hex_: Hex) -> bool:
@@ -572,6 +749,8 @@ def buy_reinforcement(game: Game, color: str, board_index: int, template_id: str
     ensure_turn(game, color)
     board = board_at(game, board_index)
     template = game.template(template_id)
+    if game.mode == GAME_MODE_SUBSCRIPTIONS and template.id != "zombie":
+        raise RuleError("generated units are delivered by subscriptions in this mode")
     if template.id != "zombie" and template.id not in game.teams[color].researched:
         raise RuleError("that unit has not been researched")
     if game.teams[color].souls < template.cost:
@@ -585,14 +764,43 @@ def buy_reinforcement(game: Game, color: str, board_index: int, template_id: str
 
 def research_unit(game: Game, color: str) -> UnitTemplate:
     ensure_turn(game, color)
-    if game.teams[color].souls < 1:
-        raise RuleError("research costs $1")
-    game.teams[color].souls -= 1
-    unit = generate_random_unit()
+    if game.teams[color].oversubscribed:
+        raise RuleError("oversubscribed")
+    if game.teams[color].souls < RESEARCH_COST:
+        raise RuleError(f"research costs ${RESEARCH_COST}")
+    game.teams[color].souls -= RESEARCH_COST
+    unit = generate_random_unit(turn_number=game.turn_number)
     game.teams[color].researched[unit.id] = unit
     game.unit_catalog[unit.id] = unit
     game.log.append(f"{color.title()} researched {unit.name} (${unit.cost}/{unit.rebate}).")
     return unit
+
+
+def subscribe_unit(game: Game, color: str, board_index: int, template_id: str, amount: int) -> Subscription:
+    ensure_turn(game, color)
+    if game.mode != GAME_MODE_SUBSCRIPTIONS:
+        raise RuleError("subscriptions are not enabled in this game")
+    if amount not in SUBSCRIPTION_AMOUNTS:
+        raise RuleError("unknown subscription amount")
+    if template_id not in game.teams[color].researched:
+        raise RuleError("that unit has not been researched")
+    board = board_at(game, board_index)
+    template = game.template(template_id)
+    total_units = amount * game.subscription_length / template.cost
+    if total_units < 0.5:
+        raise RuleError("that subscription is too small for this unit")
+    subscription = Subscription(
+        id=f"sub_{secrets.token_hex(4)}",
+        team=color,
+        template_id=template_id,
+        amount=amount,
+        cost=template.cost,
+        total_units=total_units,
+        purchased_team_turn=game.teams[color].turns_started,
+    )
+    board.subscriptions[color].append(subscription)
+    game.log.append(f"{color.title()} subscribed to {template.name} at ${amount} on board {board.index + 1}.")
+    return subscription
 
 
 def _spawner_is_ready(game: Game, board: BoardState, source: UnitInstance, require_spawn: bool = True) -> None:
@@ -1007,6 +1215,7 @@ def _graveyard_occupants(board: BoardState) -> Dict[str, int]:
 
 
 def start_turn_checks(game: Game, color: str) -> None:
+    game.teams[color].turns_started += 1
     for board in game.boards:
         if board.resigned_by == OPPONENT[color] and board.winner == color:
             reset_board(game, board, opener=color)
@@ -1032,6 +1241,7 @@ def start_turn_checks(game: Game, color: str) -> None:
     game.next_action_id = 1
     game.redo_snapshot = None
     game.redo_label = None
+    fulfill_subscriptions(game, color)
     _draw_turn_spells(game, color)
 
 
@@ -1061,6 +1271,9 @@ def apply_action(game: Game, color: str, action: str, payload: dict, clear_redo:
         set_phase(game, color, payload["phase"])
     elif action == "buy":
         buy_reinforcement(game, color, int(payload.get("board", 0)), payload["templateId"])
+    elif action == "subscribe":
+        subscription = subscribe_unit(game, color, int(payload.get("board", 0)), payload["templateId"], int(payload["amount"]))
+        return {"subscription": _subscription_to_dict(game, subscription)}
     elif action == "research":
         before = _snapshot(game)
         unit = research_unit(game, color)

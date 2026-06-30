@@ -8,7 +8,7 @@ from typing import List, Optional, Set, Tuple
 from minions.ai.actions import ActionCandidate, candidate_actions
 from minions.ai.evaluation import DEFAULT_WEIGHTS, EvaluationWeights, evaluate_game, unit_template_value
 from minions.rules.constants import Phase
-from minions.rules.game import Game, RuleError, apply_action
+from minions.rules.game import GAME_MODE_SUBSCRIPTIONS, RESEARCH_COST, SUBSCRIPTION_AMOUNTS, Game, RuleError, apply_action
 
 
 @dataclass
@@ -99,21 +99,29 @@ def _run_economy(
 ) -> None:
     while _has_time(deadline) and len(result.actions) < max_actions and game.phase == Phase.SPAWN.value:
         team = game.teams[color]
-        candidate = _best_buy(game, color)
+        if game.mode == GAME_MODE_SUBSCRIPTIONS:
+            candidate = _best_subscription(game, color)
+            if candidate and _apply(game, color, candidate, result):
+                continue
+        candidate = _best_buy(game, color, allow_zombies=False)
         if candidate and _apply(game, color, candidate, result):
             continue
         should_research = (
-            team.souls >= 1
+            team.souls >= RESEARCH_COST
+            and not team.oversubscribed
             and len(team.researched) < _target_research_count(game)
-            and (team.souls == 1 or team.souls >= 3)
+            and (team.souls == RESEARCH_COST or team.souls >= RESEARCH_COST + 2)
         )
         if should_research:
             if _apply(game, color, ActionCandidate("research", {}, "economy", description="research"), result):
                 continue
+        candidate = _best_buy(game, color, allow_zombies=True)
+        if candidate and _apply(game, color, candidate, result):
+            continue
         break
 
 
-def _best_buy(game: Game, color: str) -> Optional[ActionCandidate]:
+def _best_buy(game: Game, color: str, allow_zombies: bool = True) -> Optional[ActionCandidate]:
     team = game.teams[color]
     board_order = sorted(game.boards, key=lambda board: _board_priority(game, color, board), reverse=True)
 
@@ -135,6 +143,8 @@ def _best_buy(game: Game, color: str) -> Optional[ActionCandidate]:
     if best_researched:
         return best_researched[1]
 
+    if not allow_zombies:
+        return None
     if team.souls >= 2:
         for board in board_order:
             if len(board.reinforcements[color]) <= 2:
@@ -155,6 +165,35 @@ def _best_buy(game: Game, color: str) -> Optional[ActionCandidate]:
                 "buy Zombie",
             )
     return None
+
+
+def _best_subscription(game: Game, color: str) -> Optional[ActionCandidate]:
+    if game.mode != GAME_MODE_SUBSCRIPTIONS:
+        return None
+    team = game.teams[color]
+    if not team.researched:
+        return None
+    board_order = sorted(game.boards, key=lambda board: _board_priority(game, color, board), reverse=True)
+    best: Optional[Tuple[float, ActionCandidate]] = None
+    for template in team.researched.values():
+        for board in board_order:
+            if any(subscription.template_id == template.id for subscription in board.subscriptions[color]):
+                continue
+            for amount in reversed(SUBSCRIPTION_AMOUNTS):
+                if amount * game.subscription_length / template.cost < 0.5:
+                    continue
+                score = unit_template_value(template) / max(1, template.cost) + amount * 0.08 + _board_priority(game, color, board)
+                candidate = ActionCandidate(
+                    "subscribe",
+                    {"board": board.index, "templateId": template.id, "amount": amount},
+                    "economy",
+                    board.index,
+                    f"subscribe to {template.name}",
+                )
+                if best is None or score > best[0]:
+                    best = (score, candidate)
+                break
+    return best[1] if best else None
 
 
 def _target_research_count(game: Game) -> int:

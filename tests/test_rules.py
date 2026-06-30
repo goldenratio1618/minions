@@ -2,10 +2,10 @@ import unittest
 
 from minions.rules.constants import Phase, Terrain
 from minions.rules.coords import Hex, distance, neighbors, reflect_necromancer_axis
-from minions.rules.game import apply_action, can_enter, create_game, end_turn, is_unit_spawn_destination, move_unit, research_unit, set_phase, unit_on_hex
+from minions.rules.game import GAME_MODE_SUBSCRIPTIONS, RESEARCH_COST, apply_action, can_enter, create_game, end_turn, is_unit_spawn_destination, move_unit, research_unit, set_phase, unit_on_hex
 from minions.rules.maps import generate_map
 from minions.rules.spells import make_card
-from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, UnitInstance, attack_for_power, generate_random_unit, predicted_expression
+from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, UnitInstance, UnitTemplate, attack_for_power, generate_random_unit, predicted_expression, unit_generation_power_multiplier, unit_power
 
 
 class MapGeneratorTests(unittest.TestCase):
@@ -36,6 +36,9 @@ class UnitGeneratorTests(unittest.TestCase):
         self.assertGreaterEqual(unit.rebate, 0)
         self.assertLess(unit.rebate, unit.cost)
         self.assertGreater(predicted_expression(unit), 0)
+        self.assertEqual(unit_generation_power_multiplier(1), 2.0)
+        self.assertEqual(unit_generation_power_multiplier(31), 0.5)
+        self.assertEqual(unit_generation_power_multiplier(90), 0.5)
 
     def test_sorcerer_auxiliary_stats(self):
         sorcerer = next(unit for unit in EXISTING_UNITS if unit.id == "sorcerer")
@@ -46,7 +49,7 @@ class UnitGeneratorTests(unittest.TestCase):
     def test_generated_cost_rebate_is_locally_refined(self):
         for seed in range(25):
             unit = generate_random_unit(seed=seed)
-            target = predicted_expression(unit)
+            target = predicted_expression(unit, power_multiplier=unit_generation_power_multiplier(1))
             current = abs(unit.cost * unit.cost - unit.rebate * unit.rebate - target)
             for cost, rebate in (
                 (unit.cost + 1, unit.rebate),
@@ -63,6 +66,11 @@ class UnitGeneratorTests(unittest.TestCase):
             unit = generate_random_unit(seed=seed)
             if unit.attack == 1 or unit.attack == "*":
                 self.assertFalse(unit.flurry)
+
+    def test_generated_units_strengthen_with_turn_number(self):
+        early = [unit_power(generate_random_unit(seed=seed, turn_number=1)) for seed in range(80)]
+        late = [unit_power(generate_random_unit(seed=seed, turn_number=31)) for seed in range(80)]
+        self.assertGreater(sum(late) / len(late), sum(early) / len(early))
 
 
 class GameplayTests(unittest.TestCase):
@@ -149,6 +157,7 @@ class GameplayTests(unittest.TestCase):
         game.teams["yellow"].souls = 3
         unit = research_unit(game, "yellow")
         self.assertIn(unit.id, game.teams["yellow"].researched)
+        self.assertEqual(game.teams["yellow"].souls, 3 - RESEARCH_COST)
 
     def test_purchased_researched_unit_is_consumed(self):
         game = create_game(board_count=1, seed=4)
@@ -158,6 +167,49 @@ class GameplayTests(unittest.TestCase):
         apply_action(game, "yellow", "buy", {"board": 0, "templateId": unit.id})
         self.assertNotIn(unit.id, game.teams["yellow"].researched)
         self.assertIn(unit.id, game.boards[0].reinforcements["yellow"])
+
+    def test_subscriptions_deliver_units_on_next_team_turn(self):
+        game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
+        warg = next(unit for unit in EXISTING_UNITS if unit.id == "warg")
+        game.unit_catalog[warg.id] = warg
+        game.teams["yellow"].researched[warg.id] = warg
+        game.teams["yellow"].souls = 8
+
+        apply_action(game, "yellow", "subscribe", {"board": 0, "templateId": warg.id, "amount": 5})
+        self.assertEqual(len(game.boards[0].subscriptions["yellow"]), 1)
+        self.assertNotIn(warg.id, game.boards[0].reinforcements["yellow"])
+
+        end_turn(game, "yellow")
+        end_turn(game, "blue")
+
+        delivered = [template_id for template_id in game.boards[0].reinforcements["yellow"] if template_id == warg.id]
+        self.assertEqual(len(delivered), 2)
+        self.assertFalse(game.teams["yellow"].oversubscribed)
+
+    def test_subscription_oversubscription_blocks_research_for_turn(self):
+        game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
+        banshee = next(unit for unit in EXISTING_UNITS if unit.id == "banshee")
+        game.unit_catalog[banshee.id] = banshee
+        game.teams["yellow"].researched[banshee.id] = banshee
+        game.teams["yellow"].souls = 0
+
+        apply_action(game, "yellow", "subscribe", {"board": 0, "templateId": banshee.id, "amount": 13})
+        end_turn(game, "yellow")
+        game.teams["yellow"].souls = 0
+        end_turn(game, "blue")
+
+        self.assertTrue(game.teams["yellow"].oversubscribed)
+        with self.assertRaisesRegex(ValueError, "oversubscribed"):
+            apply_action(game, "yellow", "research", {})
+
+    def test_too_small_subscription_is_rejected(self):
+        game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
+        expensive = UnitTemplate("expensive", "Expensive", 100, 0, 5, 5, 1, 1, generated=True)
+        game.unit_catalog[expensive.id] = expensive
+        game.teams["yellow"].researched[expensive.id] = expensive
+
+        with self.assertRaisesRegex(ValueError, "too small"):
+            apply_action(game, "yellow", "subscribe", {"board": 0, "templateId": expensive.id, "amount": 2})
 
     def test_movement_is_adjacent(self):
         game = create_game(board_count=1, seed=8)

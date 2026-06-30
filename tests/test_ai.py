@@ -3,7 +3,7 @@ import unittest
 from minions.ai.actions import ActionCandidate, legal_actions
 from minions.ai.player import TurnResult, _apply, play_turn
 from minions.rules.constants import Phase
-from minions.rules.game import create_game, end_turn
+from minions.rules.game import GAME_MODE_SUBSCRIPTIONS, RESEARCH_COST, create_game, end_turn
 
 
 class AITests(unittest.TestCase):
@@ -49,13 +49,23 @@ class AITests(unittest.TestCase):
 
     def test_ai_actions_do_not_keep_undo_snapshots(self):
         game = create_game(board_count=1, seed=106)
-        game.teams["yellow"].souls = 1
+        game.teams["yellow"].souls = RESEARCH_COST
         candidate = ActionCandidate("research", {}, "economy")
 
         self.assertTrue(_apply(game, "yellow", candidate, TurnResult("yellow")))
 
         self.assertTrue(game.turn_history)
         self.assertTrue(all(action.before is None for action in game.turn_history))
+
+    def test_ai_can_research_and_subscribe_in_subscriptions_mode(self):
+        game = create_game(board_count=1, seed=107, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
+        end_turn(game, "yellow")
+
+        result = play_turn(game, "blue", time_limit=1.0)
+
+        actions = [action["action"] for action in result.actions]
+        self.assertIn("research", actions)
+        self.assertIn("subscribe", actions)
 
 
 if __name__ == "__main__":

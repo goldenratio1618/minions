@@ -11,10 +11,17 @@ from typing import Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from .ai.player import play_turn
-from .rules.game import Game, RuleError, apply_action, create_game, join_game
+from .rules.game import DEFAULT_SUBSCRIPTION_LENGTH, Game, RuleError, apply_action, create_game, join_game
 from .rules.maps import generate_map
 from .rules.spells import spell_catalog
-from .rules.units import ALPHA, EXISTING_UNITS, all_auxiliary_units, generate_random_unit, predicted_expression
+from .rules.units import (
+    ALPHA,
+    EXISTING_UNITS,
+    all_auxiliary_units,
+    generate_random_unit,
+    predicted_expression,
+    unit_generation_power_multiplier,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -26,10 +33,10 @@ class GameStore:
     def __init__(self) -> None:
         self.games: Dict[str, Game] = {}
 
-    def create(self, boards: int) -> Game:
-        game = create_game(boards)
+    def create(self, boards: int, mode: str, subscription_length: int) -> Game:
+        game = create_game(boards, mode=mode, subscription_length=subscription_length)
         while game.code in self.games:
-            game = create_game(boards)
+            game = create_game(boards, mode=mode, subscription_length=subscription_length)
         self.games[game.code] = game
         return game
 
@@ -140,7 +147,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/generators/unit":
             seed = _optional_int(parse_qs(parsed.query).get("seed", [None])[0])
-            self._json({"unit": generate_random_unit(seed=seed).to_dict(), "alpha": ALPHA})
+            turn_number = _optional_int(parse_qs(parsed.query).get("turnNumber", [None])[0]) or 1
+            self._json(
+                {
+                    "unit": generate_random_unit(seed=seed, turn_number=turn_number).to_dict(),
+                    "alpha": ALPHA,
+                    "turnNumber": turn_number,
+                    "powerMultiplier": unit_generation_power_multiplier(turn_number),
+                }
+            )
             return
         if path == "/api/units/fit":
             self._json(unit_fit_payload())
@@ -161,7 +176,11 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         body = self._body()
         if path == "/api/games":
-            game = STORE.create(int(body.get("boards", 1)))
+            game = STORE.create(
+                int(body.get("boards", 1)),
+                body.get("mode", "random_units"),
+                int(body.get("subscriptionLength", DEFAULT_SUBSCRIPTION_LENGTH)),
+            )
             self._json({"game": game.to_dict()})
             return
         parts = _parts(path)

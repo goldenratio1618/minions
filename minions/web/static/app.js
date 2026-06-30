@@ -5,6 +5,7 @@ const state = {
   mode: "select",
   selectedUnit: null,
   selectedTemplate: null,
+  pendingSubscription: null,
   selectedCard: null,
   spellTarget: null,
   terrainSpawnSource: null,
@@ -19,6 +20,8 @@ const state = {
   aiColor: null,
   aiThinking: false,
   historyOpen: false,
+  researchViewOpponent: false,
+  tutorialStep: 0,
 };
 
 const HEX_WIDTH = 80;
@@ -96,6 +99,7 @@ function resetInteractionState() {
   state.selectedCard = null;
   state.spellTarget = null;
   state.terrainSpawnSource = null;
+  state.pendingSubscription = null;
   state.drag = null;
   state.pathPreview = [];
   state.suppressClick = false;
@@ -188,6 +192,8 @@ function configureHumanGame(color) {
   state.vsAI = false;
   state.aiColor = null;
   state.aiThinking = false;
+  state.pendingSubscription = null;
+  state.researchViewOpponent = false;
   localStorage.setItem("minions-color", state.color);
 }
 
@@ -196,6 +202,8 @@ function configureAIGame(color) {
   state.vsAI = true;
   state.aiColor = opponentColor();
   state.aiThinking = false;
+  state.pendingSubscription = null;
+  state.researchViewOpponent = false;
   localStorage.setItem("minions-color", state.color);
 }
 
@@ -207,8 +215,95 @@ function team() {
   return state.game.teams[state.color];
 }
 
+function teamFor(color) {
+  return state.game.teams[color];
+}
+
 function opponentColor() {
   return state.color === "yellow" ? "blue" : "yellow";
+}
+
+function isSubscriptionsMode() {
+  return state.game && state.game.mode === "subscriptions";
+}
+
+function visibleResearchColor() {
+  return state.researchViewOpponent ? opponentColor() : state.color;
+}
+
+function boardSubscriptions(color = state.color, b = board()) {
+  return (b.subscriptions && b.subscriptions[color]) || [];
+}
+
+function graveyardCounts(b) {
+  const graves = new Set(b.map.graveyards || []);
+  const counts = { yellow: 0, blue: 0 };
+  (b.units || []).forEach((unit) => {
+    if (graves.has(unit.hex)) counts[unit.team] += 1;
+  });
+  return counts;
+}
+
+function projectedIncome(color) {
+  if (!state.game) return 0;
+  return state.game.boards.reduce((total, b) => total + 3 + graveyardCounts(b)[color], 0);
+}
+
+function subscriptionAvailableNextTurn(color) {
+  const income = state.game.turn === color ? projectedIncome(color) : 0;
+  return teamFor(color).souls + income;
+}
+
+function subscriptionTotalUnits(unit, amount) {
+  if (!state.game || !unit || !unit.cost) return 0;
+  return (amount * state.game.subscriptionLength) / unit.cost;
+}
+
+function subscriptionSchedule(subscription, color, turns = null) {
+  const horizon = turns || state.game.subscriptionLength || 1;
+  let purchased = Number(subscription.purchasedCount || 0);
+  const teamTurns = Number(teamFor(color).turnsStarted || 0);
+  const purchasedTeamTurn = Number(subscription.purchasedTeamTurn || teamTurns);
+  const totalUnits = Number(subscription.totalUnits || 0);
+  const cost = Number(subscription.cost || (subscription.template && subscription.template.cost) || 1);
+  const amount = Number(subscription.amount || 0);
+  const schedule = [];
+  for (let offset = 1; offset <= horizon; offset += 1) {
+    const age = Math.max(0, teamTurns + offset - purchasedTeamTurn);
+    const cumulative = Math.min(totalUnits, (amount * age) / cost);
+    const targetCount = Math.floor(cumulative + 0.5);
+    const count = Math.max(0, targetCount - purchased);
+    purchased += count;
+    schedule.push({ turn: offset, count, spend: count * cost });
+  }
+  return schedule;
+}
+
+function hypotheticalSubscription(unit, amount, color = state.color) {
+  return {
+    amount,
+    cost: unit.cost,
+    totalUnits: subscriptionTotalUnits(unit, amount),
+    purchasedCount: 0,
+    purchasedTeamTurn: teamFor(color).turnsStarted || 0,
+    template: unit,
+  };
+}
+
+function subscriptionNextSpend(color, hypothetical = null) {
+  if (!isSubscriptionsMode()) return 0;
+  const subscriptions = state.game.boards.flatMap((b) => boardSubscriptions(color, b));
+  if (hypothetical) subscriptions.push(hypothetical);
+  return subscriptions.reduce((total, subscription) => {
+    const next = subscriptionSchedule(subscription, color, 1)[0];
+    return total + (next ? next.spend : 0);
+  }, 0);
+}
+
+function subscriptionWouldWarn(unit, amount, color = state.color) {
+  if (!isSubscriptionsMode() || !unit) return false;
+  const hypothetical = hypotheticalSubscription(unit, amount, color);
+  return subscriptionNextSpend(color, hypothetical) > subscriptionAvailableNextTurn(color);
 }
 
 function unitById(id) {
@@ -249,6 +344,14 @@ function notebookIcon() {
     <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M7 4h10a2 2 0 012 2v14H7a2 2 0 01-2-2V6a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
       <path d="M9 4v16M12 8h4M12 12h4M12 16h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function reverseIcon() {
+  return `
+    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M7 7h11l-3-3m3 3-3 3M17 17H6l3 3m-3-3 3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   `;
 }
@@ -452,6 +555,17 @@ function sessionFormHtml() {
             <option value="blue">Blue</option>
           </select>
         </label>
+        <label>
+          Game Type
+          <select id="mode-input">
+            <option value="random_units">Random Units</option>
+            <option value="subscriptions">Subscriptions</option>
+          </select>
+        </label>
+        <label id="subscription-length-field">
+          Subscription Length
+          <input id="subscription-length-input" type="number" min="1" max="30" value="5" />
+        </label>
         <button type="button" id="create-game">New Game vs Players</button>
         <button type="button" id="play-ai">Play vs AI</button>
       </div>
@@ -475,6 +589,8 @@ function renderEmptyGame() {
 
 function wireSessionForm() {
   const colorInput = $("color-input");
+  const modeInput = $("mode-input");
+  const subscriptionLengthField = $("subscription-length-field");
   const createGame = $("create-game");
   const playAI = $("play-ai");
   const joinGame = $("join-game");
@@ -483,6 +599,11 @@ function wireSessionForm() {
   playAI.dataset.wired = "true";
   joinGame.dataset.wired = "true";
   colorInput.value = state.color;
+  const updateSubscriptionLengthVisibility = () => {
+    if (subscriptionLengthField) subscriptionLengthField.hidden = modeInput.value !== "subscriptions";
+  };
+  updateSubscriptionLengthVisibility();
+  modeInput.addEventListener("change", updateSubscriptionLengthVisibility);
   colorInput.addEventListener("change", (event) => {
     state.color = event.target.value;
     localStorage.setItem("minions-color", state.color);
@@ -494,7 +615,11 @@ function wireSessionForm() {
       configureHumanGame(colorInput.value);
       const data = await api("/api/games", {
         method: "POST",
-        body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
+        body: JSON.stringify({
+          boards: Number($("boards-input").value || 1),
+          mode: modeInput.value,
+          subscriptionLength: Number($("subscription-length-input").value || 5),
+        }),
       });
       state.game = data.game;
       renderGame();
@@ -508,7 +633,11 @@ function wireSessionForm() {
       configureAIGame(colorInput.value);
       const data = await api("/api/games", {
         method: "POST",
-        body: JSON.stringify({ boards: Number($("boards-input").value || 1) }),
+        body: JSON.stringify({
+          boards: Number($("boards-input").value || 1),
+          mode: modeInput.value,
+          subscriptionLength: Number($("subscription-length-input").value || 5),
+        }),
       });
       state.game = data.game;
       renderGame();
@@ -548,10 +677,21 @@ function renderGame() {
   root.className = "game-root";
   const currentBoard = board();
   const active = state.game.turn === state.color && !state.aiThinking;
+  const subscriptionStatus = isSubscriptionsMode() ? ["yellow", "blue"].map((color) => {
+    const due = subscriptionNextSpend(color);
+    const available = subscriptionAvailableNextTurn(color);
+    const income = state.game.turn === color ? projectedIncome(color) : 0;
+    return `<span class="status-pill ${due > available ? "danger-pill" : ""}">${color[0].toUpperCase()} subs $${due} / $${available}${income ? ` (+$${income})` : ""}</span>`;
+  }).join("") : "";
+  const researchCost = state.game.researchCost || 2;
+  const researchBlocked = !active || team().oversubscribed || team().souls < researchCost;
+  const researchLabel = team().oversubscribed ? "oversubscribed" : `Research $${researchCost}`;
+  const researchTitle = team().oversubscribed ? "Subscriptions were due but could not all be purchased this turn." : "";
   root.innerHTML = `
     <div class="status-strip">
       <div>
         <span class="status-pill">Code ${state.game.code}</span>
+        <span class="status-pill">${state.game.modeLabel || "Random Units"}</span>
         <span class="status-pill">You ${state.color}</span>
         ${state.vsAI ? `<span class="status-pill">AI ${state.aiColor}</span>` : '<span class="status-pill">Players game</span>'}
         <span class="status-pill">Turn ${state.game.turn}</span>
@@ -561,6 +701,7 @@ function renderGame() {
       <div>
         <span class="status-pill">Yellow $${state.game.teams.yellow.souls}</span>
         <span class="status-pill">Blue $${state.game.teams.blue.souls}</span>
+        ${subscriptionStatus}
         <span class="status-pill">Mana ${team().mana}</span>
         <button id="history-toggle" class="icon-button secondary" type="button" aria-expanded="${state.historyOpen ? "true" : "false"}" aria-controls="history-popover" title="Turn actions and log">${notebookIcon()}</button>
       </div>
@@ -594,10 +735,14 @@ function renderGame() {
           <div class="compact-list">${renderReinforcements(currentBoard)}</div>
         </section>
         <section class="side-section panel-research">
-          <h3>Research & Buy</h3>
+          <div class="panel-header">
+            <h3>Research & Buy</h3>
+            <button class="icon-button secondary" type="button" title="${state.researchViewOpponent ? "Show your research" : "Show opponent research"}" onclick="toggleResearchView()">${reverseIcon()}</button>
+          </div>
+          ${isSubscriptionsMode() ? renderSubscriptionSummary(state.color) : ""}
           <div class="mini-actions research-actions">
-            <button onclick="action('research')">Research $1</button>
-            <button onclick="action('buy', {board:${state.board}, templateId:'zombie'})">Buy Zombie $2</button>
+            <button ${researchBlocked ? "disabled" : ""} title="${researchTitle}" onclick="action('research')">${researchLabel}</button>
+            <button ${!active || team().souls < 2 ? "disabled" : ""} onclick="action('buy', {board:${state.board}, templateId:'zombie'})">Buy Zombie $2</button>
           </div>
           <div class="compact-list research-list">${renderResearch()}</div>
         </section>
@@ -626,6 +771,7 @@ function renderGame() {
       state.selectedUnit = null;
       state.selectedCard = null;
       state.spellTarget = null;
+      state.pendingSubscription = null;
       state.pathPreview = [];
       renderGame();
     });
@@ -640,10 +786,19 @@ function renderGame() {
 function findTemplate(templateId) {
   const base = Object.values(state.game.baseUnits || {}).find((unit) => unit.id === templateId);
   if (base) return base;
-  const researched = (team().researched || []).find((unit) => unit.id === templateId);
-  if (researched) return researched;
-  for (const candidate of board().reinforcements[state.color] || []) {
-    if (candidate.id === templateId) return candidate;
+  for (const teamState of Object.values(state.game.teams || {})) {
+    const researched = (teamState.researched || []).find((unit) => unit.id === templateId);
+    if (researched) return researched;
+  }
+  for (const b of state.game.boards || []) {
+    for (const units of Object.values(b.reinforcements || {})) {
+      const reinforcement = units.find((unit) => unit.id === templateId);
+      if (reinforcement) return reinforcement;
+    }
+    for (const subscriptions of Object.values(b.subscriptions || {})) {
+      const subscription = subscriptions.find((candidate) => candidate.templateId === templateId);
+      if (subscription) return subscription.template;
+    }
   }
   return null;
 }
@@ -906,6 +1061,49 @@ function updateHoverUnitTemplate(templateId, label = "Unit") {
   `;
 }
 
+function renderSubscriptionBars(schedule) {
+  const maxCount = Math.max(1, ...schedule.map((item) => item.count));
+  return `
+    <div class="subscription-bars">
+      ${schedule.map((item) => `
+        <div class="subscription-bar-row">
+          <span>T+${item.turn}</span>
+          <div class="subscription-bar-track"><div class="subscription-bar-fill" style="width:${(item.count / maxCount) * 100}%"></div></div>
+          <strong>${item.count}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function updateHoverSubscription(templateId, amount, label = "Subscription") {
+  const card = $("hover-card");
+  const unit = findTemplate(templateId);
+  if (!card || !unit || !isSubscriptionsMode()) return;
+  const subscription = hypotheticalSubscription(unit, amount, state.color);
+  const schedule = subscriptionSchedule(subscription, state.color);
+  const total = subscriptionTotalUnits(unit, amount);
+  const spend = schedule.reduce((sum, item) => sum + item.spend, 0);
+  card.innerHTML = `
+    <div class="hover-props"><span>${label}</span><span>$${amount}</span><span>${total.toFixed(2)} total</span></div>
+    <div class="hover-unit-name">${unit.name}</div>
+    ${renderSubscriptionBars(schedule)}
+    <div class="hover-unit-stats">Expected full fulfillment over ${state.game.subscriptionLength} turn${state.game.subscriptionLength === 1 ? "" : "s"}: $${spend} spend.</div>
+  `;
+}
+
+function updateHoverActiveSubscription(subscription, color = state.color) {
+  const card = $("hover-card");
+  if (!card || !subscription || !isSubscriptionsMode()) return;
+  const schedule = subscriptionSchedule(subscription, color);
+  card.innerHTML = `
+    <div class="hover-props"><span>Active</span><span>$${subscription.amount}</span><span>${subscription.purchasedCount} bought</span></div>
+    <div class="hover-unit-name">${subscription.template.name}</div>
+    ${renderSubscriptionBars(schedule)}
+    <div class="hover-unit-stats">Fulfillment request ${Number(subscription.fulfillmentRequest || 0).toFixed(2)}; ${subscription.age} turn${subscription.age === 1 ? "" : "s"} old.</div>
+  `;
+}
+
 function handleHexClick(q, r, unitId) {
   if (state.suppressClick) return;
   const key = hexKey(q, r);
@@ -1165,18 +1363,116 @@ function renderReinforcements(b) {
   `).join("")}</div>`;
 }
 
-function renderResearch() {
-  const researched = team().researched || [];
-  if (!researched.length) return '<div class="mini-card research-empty">No researched minions yet.</div>';
-  const densityClass = researched.length >= 2 ? "dense" : "single";
-  return `<div class="reinforcement-list research-bench-list ${densityClass} ${researched.length > 6 ? "scrollable" : ""}">${researched.map((unit) => `
-    <div class="mini-card">
-      <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
-      <button class="bench-unit" type="button" data-template="${unit.id}" data-source="research" onmouseenter="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onfocus="updateHoverUnitTemplate('${unit.id}', 'Researched minion')" onclick="action('buy', {board:${state.board}, templateId:'${unit.id}'})">${unitToken({ ...unit, team: state.color })}</button>
-      <div class="bench-stats">${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
-      <div class="muted bench-help">Click or drag to Reinforcements to buy.</div>
+function renderSubscriptionSummary(color) {
+  const due = subscriptionNextSpend(color);
+  const available = subscriptionAvailableNextTurn(color);
+  const income = state.game.turn === color ? projectedIncome(color) : 0;
+  return `
+    <div class="subscription-summary ${due > available ? "warning" : ""}">
+      <strong>Next subscriptions $${due}</strong>
+      <span>Available $${available}${income ? ` after +$${income} income` : ""}</span>
     </div>
-  `).join("")}</div>`;
+  `;
+}
+
+function renderSubscriptionButtons(unit, enabled) {
+  const amounts = state.game.subscriptionAmounts || [2, 3, 5, 8, 13];
+  return `
+    <div class="subscription-buttons">
+      ${amounts.map((amount) => {
+        const total = subscriptionTotalUnits(unit, amount);
+        const tooSmall = total < 0.5;
+        const selected = state.pendingSubscription && state.pendingSubscription.templateId === unit.id && state.pendingSubscription.amount === amount;
+        const warning = !tooSmall && subscriptionWouldWarn(unit, amount);
+        return `<button type="button" class="subscription-button ${selected ? "active" : ""} ${warning ? "danger-outline" : ""}" ${!enabled || tooSmall ? "disabled" : ""} title="${tooSmall ? "Too small for this unit" : `${total.toFixed(2)} units over the subscription`}" onclick="selectSubscriptionAmount('${unit.id}', ${amount})">$${amount}</button>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderActiveSubscriptionCard(subscription, color) {
+  const schedule = subscriptionSchedule(subscription, color, Math.min(3, state.game.subscriptionLength));
+  const nextCount = schedule.length ? schedule[0].count : 0;
+  return `
+    <div class="mini-card subscription-card active-subscription">
+      <strong>${subscription.template.name} $${subscription.template.cost}/${subscription.template.rebate}</strong>
+      <button class="bench-unit subscription-unit active" type="button" onmouseenter="updateHoverActiveSubscriptionById('${subscription.id}', '${color}')" onfocus="updateHoverActiveSubscriptionById('${subscription.id}', '${color}')" onclick="updateHoverActiveSubscriptionById('${subscription.id}', '${color}')">${unitToken({ ...subscription.template, team: color })}</button>
+      <div class="bench-stats">$${subscription.amount}; ${subscription.purchasedCount} bought; next ${nextCount}</div>
+      <div class="muted bench-help">Board ${state.board + 1} subscription.</div>
+    </div>
+  `;
+}
+
+function renderResearchUnitCard(unit, color, activeOwn) {
+  const pending = state.pendingSubscription && state.pendingSubscription.templateId === unit.id;
+  const label = isSubscriptionsMode() ? "Researched design" : "Researched minion";
+  const click = isSubscriptionsMode()
+    ? activeOwn
+      ? `confirmSubscription('${unit.id}')`
+      : `updateHoverUnitTemplate('${unit.id}', '${label}')`
+    : activeOwn
+      ? `action('buy', {board:${state.board}, templateId:'${unit.id}'})`
+      : `updateHoverUnitTemplate('${unit.id}', '${label}')`;
+  return `
+    <div class="mini-card ${pending ? "subscription-pending-card" : ""}">
+      <strong>${unit.name} $${unit.cost}/${unit.rebate}</strong>
+      <button class="bench-unit ${pending ? "subscription-pending" : ""}" type="button" ${!isSubscriptionsMode() && activeOwn ? `data-template="${unit.id}" data-source="research"` : ""} onmouseenter="updateHoverUnitTemplate('${unit.id}', '${label}')" onfocus="updateHoverUnitTemplate('${unit.id}', '${label}')" onclick="${click}">${unitToken({ ...unit, team: color })}</button>
+      <div class="bench-stats">${unit.speed} speed, ${unit.range} range, ${unit.attack}/${unit.defense}</div>
+      ${isSubscriptionsMode() && activeOwn ? renderSubscriptionButtons(unit, true) : `<div class="muted bench-help">${activeOwn ? "Click or drag to Reinforcements to buy." : `${color} research.`}</div>`}
+      ${isSubscriptionsMode() && activeOwn ? '<div class="muted bench-help">Choose $ amount, then click the unit.</div>' : ""}
+    </div>
+  `;
+}
+
+function renderResearch() {
+  const color = visibleResearchColor();
+  const researched = teamFor(color).researched || [];
+  const subscriptions = isSubscriptionsMode() ? boardSubscriptions(color) : [];
+  if (!researched.length && !subscriptions.length) {
+    return `<div class="mini-card research-empty">No ${state.researchViewOpponent ? "opponent " : ""}research on this board.</div>`;
+  }
+  const cards = [
+    ...subscriptions.map((subscription) => renderActiveSubscriptionCard(subscription, color)),
+    ...researched.map((unit) => renderResearchUnitCard(unit, color, color === state.color && state.game.turn === state.color && !state.aiThinking)),
+  ];
+  const densityClass = cards.length >= 2 ? "dense" : "single";
+  return `<div class="reinforcement-list research-bench-list ${densityClass} ${cards.length > 6 ? "scrollable" : ""}">${cards.join("")}</div>`;
+}
+
+function selectSubscriptionAmount(templateId, amount) {
+  if (!isSubscriptionsMode() || state.game.turn !== state.color || state.aiThinking) return;
+  const unit = findTemplate(templateId);
+  if (!unit) return;
+  if (subscriptionTotalUnits(unit, amount) < 0.5) return;
+  state.pendingSubscription = { templateId, amount };
+  renderGame();
+  updateHoverSubscription(templateId, amount, "Planned subscription");
+  notice(`Click ${unit.name} to subscribe on board ${state.board + 1}.`, true);
+}
+
+function confirmSubscription(templateId) {
+  if (!state.pendingSubscription || state.pendingSubscription.templateId !== templateId) {
+    updateHoverUnitTemplate(templateId, "Researched design");
+    return;
+  }
+  const amount = state.pendingSubscription.amount;
+  state.pendingSubscription = null;
+  action("subscribe", { board: state.board, templateId, amount });
+}
+
+function findSubscriptionById(id, color) {
+  return boardSubscriptions(color).find((subscription) => subscription.id === id);
+}
+
+function updateHoverActiveSubscriptionById(id, color) {
+  const subscription = findSubscriptionById(id, color);
+  if (subscription) updateHoverActiveSubscription(subscription, color);
+}
+
+function toggleResearchView() {
+  state.researchViewOpponent = !state.researchViewOpponent;
+  state.pendingSubscription = null;
+  renderGame();
 }
 
 function renderHand(b = board()) {
@@ -1301,11 +1597,118 @@ function renderGeneratedMap(map) {
   return html;
 }
 
-function renderGeneratedUnit(unit, alpha) {
+function renderGeneratedUnit(unit, alpha, turnNumber = 1, powerMultiplier = 1) {
   return `
     <div class="unit-preview">${unitToken(unit, true)}</div>
-    <pre>${JSON.stringify({ alpha, unit }, null, 2)}</pre>
+    <pre>${JSON.stringify({ alpha, turnNumber, powerMultiplier, unit }, null, 2)}</pre>
   `;
+}
+
+const TUTORIAL_UNITS = {
+  necromancer: { id: "necromancer", name: "Necromancer", cost: 0, rebate: 0, attack: "*", defense: 10, speed: 1, range: 1, spawn: true, persistent: true, blink: false, flurry: false, ward: 0, flying: false, lumbering: false, terrainSpawn: [], minion: false },
+  zombie: { id: "zombie", name: "Zombie", cost: 2, rebate: 0, attack: 1, defense: 1, speed: 1, range: 1, spawn: true, persistent: false, blink: false, flurry: false, ward: 0, flying: false, lumbering: true, terrainSpawn: [], minion: true },
+  attacker: { id: "attacker", name: "Crypt Claw", cost: 4, rebate: 1, attack: 3, defense: 2, speed: 2, range: 1, spawn: false, persistent: false, blink: false, flurry: false, ward: 0, flying: false, lumbering: false, terrainSpawn: [], minion: true },
+  defender: { id: "defender", name: "Bone Guard", cost: 4, rebate: 1, attack: 2, defense: 4, speed: 1, range: 1, spawn: true, persistent: false, blink: false, flurry: false, ward: 0, flying: false, lumbering: false, terrainSpawn: [], minion: true },
+  flyer: { id: "flyer", name: "Pale Moth", cost: 5, rebate: 2, attack: 2, defense: 3, speed: 3, range: 2, spawn: false, persistent: false, blink: false, flurry: false, ward: 0, flying: true, lumbering: false, terrainSpawn: [], minion: true },
+};
+
+function tutorialToken(kind, team, label = "") {
+  return `<div class="tutorial-token ${label ? "tutorial-token-damaged" : ""}">${unitToken({ ...TUTORIAL_UNITS[kind], team }, true)}${label ? `<span>${label}</span>` : ""}</div>`;
+}
+
+function tutorialBoardExample(kind) {
+  const cells = Array.from({ length: 25 }, () => ({ cls: "", html: "" }));
+  const set = (index, cls, html) => {
+    cells[index] = { cls, html };
+  };
+  if (kind === "spawn") {
+    [1, 6, 7, 12, 17, 18, 23].forEach((index) => set(index, "graveyard", '<span class="tutorial-grave">GY</span>'));
+    set(10, "spawn-yellow", tutorialToken("necromancer", "yellow"));
+    set(11, "graveyard", tutorialToken("zombie", "yellow"));
+    set(12, "graveyard highlight", '<span class="tutorial-grave">GY</span><span class="tutorial-plus">+</span>');
+    set(13, "graveyard", tutorialToken("zombie", "yellow"));
+    set(14, "spawn-blue", tutorialToken("necromancer", "blue"));
+    set(8, "graveyard", tutorialToken("zombie", "blue"));
+    set(18, "graveyard", tutorialToken("zombie", "blue"));
+  } else if (kind === "attack") {
+    [2, 6, 8, 12, 16, 18, 22].forEach((index) => set(index, "graveyard", '<span class="tutorial-grave">GY</span>'));
+    set(5, "spawn-yellow", tutorialToken("necromancer", "yellow"));
+    set(9, "spawn-blue", tutorialToken("necromancer", "blue"));
+    set(11, "graveyard", tutorialToken("zombie", "yellow"));
+    set(12, "graveyard", tutorialToken("attacker", "yellow"));
+    set(13, "graveyard highlight", tutorialToken("defender", "blue", "3 dmg"));
+    set(17, "graveyard", tutorialToken("zombie", "blue"));
+  } else {
+    [1, 3, 6, 8, 11, 13, 16, 18, 21, 23].forEach((index) => set(index, "graveyard", '<span class="tutorial-grave">GY</span>'));
+    set(5, "spawn-yellow", tutorialToken("necromancer", "yellow"));
+    set(19, "spawn-blue", tutorialToken("necromancer", "blue"));
+    set(6, "graveyard", tutorialToken("zombie", "yellow"));
+    set(8, "graveyard", tutorialToken("zombie", "yellow"));
+    set(11, "graveyard", tutorialToken("zombie", "blue"));
+    set(13, "graveyard", tutorialToken("zombie", "blue"));
+    set(12, "water", tutorialToken("flyer", "yellow"));
+  }
+  return `<div class="tutorial-board">${cells.map((cell) => `<div class="tutorial-cell ${cell.cls}">${cell.html}</div>`).join("")}</div>`;
+}
+
+const TUTORIAL_STEPS = [
+  {
+    title: "Turn Shape",
+    body: "Each turn starts in spawn phase, then may switch once to movement. Spawn reinforcements beside ready Spawn units, play spawn-phase spells, then move and attack with units across any board before ending the turn for income.",
+    board: tutorialBoardExample("overview"),
+  },
+  {
+    title: "Random Units",
+    body: "In Random Units, research reveals a generated minion design for $2. Buying that design places one copy into the current board's reinforcements and consumes that researched copy. Zombies can still be bought for $2, but they are usually filler.",
+    board: tutorialBoardExample("overview"),
+  },
+  {
+    title: "Subscriptions",
+    body: "In Subscriptions, research still reveals generated designs, but the $2, $3, $5, $8, and $13 buttons create board-specific delivery plans. At the start of your later turns, due subscribed units are bought automatically into that board's reinforcements if you can afford them.",
+    board: tutorialBoardExample("overview"),
+  },
+  {
+    title: "Spawning",
+    body: "A reinforcement can spawn onto an adjacent legal hex beside a ready friendly Spawn unit. This example has a necromancer and zombies holding graveyards, with a new zombie spawning onto an adjacent graveyard. Newly spawned units enter exhausted.",
+    board: tutorialBoardExample("spawn"),
+  },
+  {
+    title: "Attacks And Fester",
+    body: "A 3 attack Crypt Claw can damage a 4 defense Bone Guard without killing it. Because Bone Guard is now damaged, Fester can deal the final point and destroy it. Spells that require damaged enemies cannot start the damage by themselves.",
+    board: tutorialBoardExample("attack"),
+  },
+  {
+    title: "Board Pressure",
+    body: "Graveyards matter because end-turn income counts occupied graveyards, and starting your turn with eight graveyards on a board wins that board. Necromancers are still the highest-value targets, so protect yours while building graveyard control.",
+    board: tutorialBoardExample("overview"),
+  },
+];
+
+function renderTutorial() {
+  const root = $("tutorial-root");
+  if (!root) return;
+  const step = TUTORIAL_STEPS[state.tutorialStep] || TUTORIAL_STEPS[0];
+  root.innerHTML = `
+    <div class="tutorial-layout">
+      <aside class="tutorial-steps">
+        ${TUTORIAL_STEPS.map((item, index) => `<button class="secondary ${index === state.tutorialStep ? "active" : ""}" onclick="setTutorialStep(${index})">${index + 1}. ${item.title}</button>`).join("")}
+      </aside>
+      <section class="tutorial-panel">
+        <h2>${step.title}</h2>
+        <p>${step.body}</p>
+        ${step.board}
+        <div class="mini-actions">
+          <button class="secondary" ${state.tutorialStep === 0 ? "disabled" : ""} onclick="setTutorialStep(${state.tutorialStep - 1})">Previous</button>
+          <button class="secondary" ${state.tutorialStep >= TUTORIAL_STEPS.length - 1 ? "disabled" : ""} onclick="setTutorialStep(${state.tutorialStep + 1})">Next</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function setTutorialStep(index) {
+  state.tutorialStep = clamp(index, 0, TUTORIAL_STEPS.length - 1);
+  renderTutorial();
 }
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -1333,8 +1736,9 @@ $("generate-map").addEventListener("click", async () => {
 
 $("generate-unit").addEventListener("click", async () => {
   try {
-    const data = await api("/api/generators/unit");
-    $("unit-lab").innerHTML = renderGeneratedUnit(data.unit, data.alpha);
+    const turnNumber = Number($("unit-turn-input").value || 1);
+    const data = await api(`/api/generators/unit?turnNumber=${encodeURIComponent(turnNumber)}`);
+    $("unit-lab").innerHTML = renderGeneratedUnit(data.unit, data.alpha, data.turnNumber, data.powerMultiplier);
     notice("Generated unit.", true);
   } catch (err) {
     notice(err.message);
@@ -1345,7 +1749,13 @@ window.action = action;
 window.aiTurn = aiTurn;
 window.setMode = setMode;
 window.selectCardById = selectCardById;
+window.selectSubscriptionAmount = selectSubscriptionAmount;
+window.confirmSubscription = confirmSubscription;
+window.updateHoverActiveSubscriptionById = updateHoverActiveSubscriptionById;
 window.updateHoverUnitTemplate = updateHoverUnitTemplate;
+window.toggleResearchView = toggleResearchView;
+window.setTutorialStep = setTutorialStep;
 window.state = state;
 
+renderTutorial();
 renderGame();

@@ -244,6 +244,11 @@ p {
   font-weight: 700;
 }
 
+.status-pill.danger-pill {
+  background: #f8d5ce;
+  color: #9d2f22;
+}
+
 .icon-button {
   width: 34px;
   height: 34px;
@@ -743,7 +748,7 @@ p {
 
 .panel-research {
   grid-area: research;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .panel-spells {
@@ -768,6 +773,13 @@ p {
   margin: 0;
 }
 
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .compact-list {
   display: grid;
   gap: 7px;
@@ -775,6 +787,96 @@ p {
 
 .research-actions {
   align-self: start;
+}
+
+.subscription-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #b7d4b6;
+  border-radius: 7px;
+  background: #edf8eb;
+  color: #205d35;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+}
+
+.subscription-summary.warning {
+  border-color: #efb4aa;
+  background: #fbe5e1;
+  color: #9d2f22;
+}
+
+.subscription-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.subscription-button {
+  min-width: 36px;
+  padding: 0.24rem 0.36rem;
+  border-color: #1e743c;
+  background: #228647;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.subscription-button.active,
+.subscription-pending .unit-token,
+.subscription-pending-card {
+  outline: 3px solid #2fa45a;
+  outline-offset: 2px;
+}
+
+.subscription-button.danger-outline {
+  outline: 3px solid var(--danger);
+  outline-offset: 1px;
+}
+
+.subscription-button:disabled {
+  background: #d2d2d2;
+  border-color: #9d9d9d;
+  color: #565656;
+}
+
+.active-subscription {
+  border-color: #2fa45a;
+  background: #f2fbf0;
+}
+
+.active-subscription .unit-token {
+  --unit-border: #2fa45a;
+}
+
+.subscription-bars {
+  display: grid;
+  gap: 5px;
+  margin: 4px 0;
+}
+
+.subscription-bar-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+}
+
+.subscription-bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: #e1e6df;
+  overflow: hidden;
+}
+
+.subscription-bar-fill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: #2fa45a;
 }
 
 .research-list {
@@ -1279,12 +1381,139 @@ p {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
+}
+
+.lab-control {
+  display: inline-grid;
+  gap: 3px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.lab-control input {
+  width: 82px;
 }
 
 .lab-output {
   min-height: 360px;
   padding: 12px;
+}
+
+.tutorial-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.tutorial-steps,
+.tutorial-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+.tutorial-steps {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.tutorial-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.tutorial-panel p {
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.tutorial-board {
+  display: grid;
+  grid-template-columns: repeat(5, 86px);
+  grid-auto-rows: 76px;
+  gap: 4px;
+  align-self: start;
+}
+
+.tutorial-cell {
+  position: relative;
+  clip-path: var(--hex-shape);
+  background: #d7b87c;
+  border: 3px solid rgba(54, 42, 30, 0.3);
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+
+.tutorial-cell.graveyard {
+  background: #151515;
+  color: white;
+}
+
+.tutorial-cell.water {
+  background: var(--water);
+}
+
+.tutorial-cell.spawn-yellow {
+  border-color: var(--yellow);
+}
+
+.tutorial-cell.spawn-blue {
+  border-color: var(--blue);
+}
+
+.tutorial-cell.highlight {
+  outline: 4px solid #2fa45a;
+  outline-offset: 1px;
+}
+
+.tutorial-grave,
+.tutorial-plus {
+  font-weight: 900;
+}
+
+.tutorial-plus {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  color: #2fa45a;
+  font-size: 1.4rem;
+}
+
+.tutorial-token {
+  position: relative;
+  width: 74px;
+  height: 65px;
+}
+
+.tutorial-token .unit-token {
+  inset: 0;
+  font-size: 0.5rem;
+}
+
+.tutorial-token .unit-name {
+  display: none;
+}
+
+.tutorial-token-damaged > span {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: #f8d5ce;
+  color: #9d2f22;
+  padding: 1px 5px;
+  font-size: 0.62rem;
+  font-weight: 900;
+  white-space: nowrap;
+  z-index: 4;
 }
 
 .unit-lab-grid {
@@ -1384,8 +1613,18 @@ pre {
   }
 
   .game-layout,
-  .unit-lab-grid {
+  .unit-lab-grid,
+  .tutorial-layout {
     grid-template-columns: 1fr;
+  }
+
+  .tutorial-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tutorial-board {
+    grid-template-columns: repeat(5, minmax(50px, 1fr));
+    grid-auto-rows: 64px;
   }
 
   .side-panel {

@@ -37,6 +37,8 @@ The EC2 deployment runs nginx on port 80 and proxies to the Python app on `127.0
 
 The game is played by yellow and blue on a chosen number of boards. Creating a game returns a six-character code; another player can join that code and choose yellow or blue. Yellow goes first. Blue starts with `$4 * number_of_boards`.
 
+Games can be created in either **Random Units** or **Subscriptions** mode. Random Units is the original mode: researched generated units are bought one copy at a time. Subscriptions uses the same board, turn, spell, spawn, movement, attack, and win rules, but generated units are delivered by fixed-length board subscriptions. Subscription length is chosen at game setup and does not change during play.
+
 Each board is a 10 by 10 axial hex grid rendered as a diamond. A generated map has exactly ten graveyards, symmetric water, seven yellow spawn tiles, and seven blue spawn tiles. Current maps use about half the original water density, typically 4 to 10 water tiles. The spawn tiles are arranged as one center tile surrounded by six allied tiles on opposite sides of the rotated board. Spawn tiles never contain water. Graveyards are never adjacent to other graveyards, and every graveyard must have a non-water path to both starting necromancer hexes. Generated maps are either rotationally symmetric by 180 degrees or reflectionally symmetric along the axis that swaps the blue and yellow necromancer starts. At least two graveyards are within distance 1 of turn-one spawn tiles.
 
 Each board starts with one necromancer per color on the central spawn tile and six allied zombies around it. Whenever a board starts or resets, both sides also get one free zombie in that board's reinforcements.
@@ -81,7 +83,9 @@ At the start of each team's turn, that team draws one random spell card into eac
 
 ## Turn Flow
 
-Turns start in the spawn phase. A team may buy zombies, buy researched units into a board's reinforcements, research new random unit designs for `$1`, spawn reinforcements, and cast spawn-phase spells. Switching to the movement phase is one-way.
+Turns start in the spawn phase. A team may buy zombies, buy or subscribe to researched units, research new random unit designs for `$2`, spawn reinforcements, and cast spawn-phase spells. Switching to the movement phase is one-way.
+
+In Random Units mode, buying a researched generated unit places one copy into the current board's reinforcements and consumes that researched copy. In Subscriptions mode, researched generated units are not bought directly. Each researched unit shows `$2`, `$3`, `$5`, `$8`, and `$13` subscription buttons. Buttons whose total delivery would be less than half a unit are unavailable. Choosing a button and then the unit creates a subscription on the current board only. At the start of that team's later turns, due subscribed units are automatically bought into that board's reinforcements while the team has enough money. If any due subscription cannot be bought, that team is oversubscribed and cannot research during that turn.
 
 During movement, a player may move and attack with units in any order. An individual unit must move before attacking. Once a unit attacks, it cannot move again except through spells or Blink. Movement is one hex at a time; friendly units can trade places. If another unit acts after a unit has partially moved, the first unit loses remaining movement. Flurry attacks are not atomic and can continue spending their remaining damage.
 
@@ -95,7 +99,11 @@ A team wins a board point when it kills the opposing necromancer, starts its tur
 
 ## Random Units and Cost Fit
 
-Random units sample attack and defense from exponential distributions with minimum 1 and lambda 0.3. Speed uses weights `[0.5, 0.3, 0.2]` for speeds 1, 2, and 3. Range uses weights `[0.7, 0.2, 0.1]` for ranges 1, 2, and 3. Each keyword has probability 0.2, and each terrain-spawn option has probability 0.05.
+Random units become stronger as the game progresses. The progression reaches its late-game values at turn 31, synchronized with the cost-efficiency multiplier below.
+
+At turn 1, attack uses exponential lambda `0.75`, defense uses lambda `0.70`, speed weights are `[0.72, 0.23, 0.05]` for speeds 1, 2, and 3, range weights are `[0.82, 0.15, 0.03]` for ranges 1, 2, and 3, positive keyword probability is `0.08`, terrain-spawn probability is `0.03`, lumbering probability is `0.30`, and special attack conversion probability is `0.10`.
+
+At turn 31 and later, attack uses exponential lambda `0.24`, defense uses lambda `0.22`, speed weights are `[0.28, 0.42, 0.30]`, range weights are `[0.45, 0.35, 0.20]`, positive keyword probability is `0.30`, terrain-spawn probability is `0.18`, lumbering probability is `0.08`, and special attack conversion probability is `0.30`. Intermediate turns linearly interpolate between those values.
 
 Power is computed as:
 
@@ -113,5 +121,7 @@ Power is computed as:
 ```text
 (Cost - Rebate) * (Cost + Rebate) = alpha * Unit Power
 ```
+
+After power is computed for a generated unit, it is multiplied for pricing by `max(0.5, 2 - 0.05 * (turn_number - 1))`. Early generated units are therefore less cost efficient; by turn 31 the multiplier has reached `0.5`.
 
 The app includes the existing units as auxiliary data, generates `static/unit-fit.svg`, and labels each existing unit on the fit plot.

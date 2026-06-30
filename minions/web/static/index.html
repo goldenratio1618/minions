@@ -13,6 +13,7 @@
           <summary aria-label="Open navigation menu">☰</summary>
           <nav class="tabs">
             <button class="tab active" data-view="play">Gameplay</button>
+            <button class="tab" data-view="tutorial">Tutorial</button>
             <button class="tab" data-view="maps">Map Lab</button>
             <button class="tab" data-view="units">Unit Lab</button>
           </nav>
@@ -33,9 +34,17 @@
         <div id="map-lab" class="lab-output"></div>
       </section>
 
+      <section id="tutorial-view" class="view">
+        <div id="tutorial-root" class="tutorial-root"></div>
+      </section>
+
       <section id="units-view" class="view">
         <div class="lab-header">
           <h2>Random Unit Generator</h2>
+          <label class="lab-control">
+            Turn
+            <input id="unit-turn-input" type="number" min="1" max="60" value="1" />
+          </label>
           <button id="generate-unit">Generate Unit</button>
         </div>
         <div class="unit-lab-grid">

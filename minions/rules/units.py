@@ -4,11 +4,12 @@ import math
 import random
 import secrets
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 
 from .constants import TERRAIN_LABELS, Terrain
 
 AttackValue = Union[int, str]
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -226,11 +227,11 @@ def observed_expression(unit: UnitTemplate) -> int:
     return unit.cost * unit.cost - unit.rebate * unit.rebate
 
 
-def predicted_expression(unit: UnitTemplate, alpha: float = ALPHA) -> float:
-    return alpha * unit_power(unit)
+def predicted_expression(unit: UnitTemplate, alpha: float = ALPHA, power_multiplier: float = 1.0) -> float:
+    return alpha * unit_power(unit) * power_multiplier
 
 
-def _weighted_choice(rng: random.Random, values: Sequence[Tuple[int, float]]) -> int:
+def _weighted_choice(rng: random.Random, values: Sequence[Tuple[T, float]]) -> T:
     roll = rng.random()
     total = 0.0
     for value, weight in values:
@@ -240,8 +241,24 @@ def _weighted_choice(rng: random.Random, values: Sequence[Tuple[int, float]]) ->
     return values[-1][0]
 
 
-def _sample_stat(rng: random.Random) -> int:
-    return max(1, int(math.floor(1 + rng.expovariate(0.3))))
+def unit_generation_power_multiplier(turn_number: int) -> float:
+    return max(0.5, 2.0 - 0.05 * max(0, turn_number - 1))
+
+
+def unit_generation_progress(turn_number: int) -> float:
+    return min(1.0, max(0.0, (turn_number - 1) / 30.0))
+
+
+def _lerp(start: float, end: float, progress: float) -> float:
+    return start + (end - start) * progress
+
+
+def _blend_weights(start: Sequence[Tuple[T, float]], end: Sequence[Tuple[T, float]], progress: float) -> List[Tuple[T, float]]:
+    return [(start_value, _lerp(start_weight, end_weight, progress)) for (start_value, start_weight), (_, end_weight) in zip(start, end)]
+
+
+def _sample_stat(rng: random.Random, progress: float, early_lambda: float, late_lambda: float) -> int:
+    return max(1, int(math.floor(1 + rng.expovariate(_lerp(early_lambda, late_lambda, progress)))))
 
 
 def _sample_cost_rebate(target: float, rng: random.Random) -> Tuple[int, int]:
@@ -285,23 +302,27 @@ NAME_PARTS_A = ["Ash", "Bone", "Crypt", "Dread", "Grim", "Mire", "Night", "Pale"
 NAME_PARTS_B = ["binder", "claw", "gazer", "hound", "moth", "reaver", "shade", "skulk", "thorn", "walker"]
 
 
-def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA) -> UnitTemplate:
+def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA, turn_number: int = 1) -> UnitTemplate:
     rng = random.Random(seed)
-    attack: AttackValue = _sample_stat(rng)
-    defense = _sample_stat(rng)
-    speed = _weighted_choice(rng, [(1, 0.5), (2, 0.3), (3, 0.2)])
-    unit_range = _weighted_choice(rng, [(1, 0.7), (2, 0.2), (3, 0.1)])
-    spawn = rng.random() < 0.2
-    persistent = rng.random() < 0.2
-    blink = rng.random() < 0.2
-    flurry = rng.random() < 0.2
-    ward = 1 if rng.random() < 0.2 else 0
-    flying = rng.random() < 0.2
-    lumbering = rng.random() < 0.2
-    terrain_spawn = (rng.choice(tuple(terrain.value for terrain in Terrain)),) if rng.random() < 0.2 else ()
-    if isinstance(attack, int) and attack >= 3 and rng.random() < 0.25:
+    progress = unit_generation_progress(turn_number)
+    attack: AttackValue = _sample_stat(rng, progress, 0.75, 0.24)
+    defense = _sample_stat(rng, progress, 0.70, 0.22)
+    speed = _weighted_choice(rng, _blend_weights([(1, 0.72), (2, 0.23), (3, 0.05)], [(1, 0.28), (2, 0.42), (3, 0.30)], progress))
+    unit_range = _weighted_choice(rng, _blend_weights([(1, 0.82), (2, 0.15), (3, 0.03)], [(1, 0.45), (2, 0.35), (3, 0.20)], progress))
+    keyword_chance = _lerp(0.08, 0.30, progress)
+    terrain_chance = _lerp(0.03, 0.18, progress)
+    spawn = rng.random() < keyword_chance
+    persistent = rng.random() < keyword_chance
+    blink = rng.random() < keyword_chance
+    flurry = rng.random() < keyword_chance
+    ward = 1 if rng.random() < keyword_chance else 0
+    flying = rng.random() < keyword_chance
+    lumbering = rng.random() < _lerp(0.30, 0.08, progress)
+    terrain_spawn = (rng.choice(tuple(terrain.value for terrain in Terrain)),) if rng.random() < terrain_chance else ()
+    special_attack_chance = _lerp(0.10, 0.30, progress)
+    if isinstance(attack, int) and attack >= 3 and rng.random() < special_attack_chance:
         attack = "*"
-    if isinstance(attack, int) and attack >= 6 and flurry and rng.random() < 0.25:
+    if isinstance(attack, int) and attack >= 6 and flurry and rng.random() < special_attack_chance:
         attack = "**"
     if attack == 1 or attack == "*":
         flurry = False
@@ -324,7 +345,10 @@ def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA) -> Un
         terrain_spawn=terrain_spawn,
         generated=True,
     )
-    cost, rebate = _sample_cost_rebate(predicted_expression(draft, alpha), rng)
+    cost, rebate = _sample_cost_rebate(
+        predicted_expression(draft, alpha, power_multiplier=unit_generation_power_multiplier(turn_number)),
+        rng,
+    )
     name = f"{rng.choice(NAME_PARTS_A)} {rng.choice(NAME_PARTS_B).title()}"
     return UnitTemplate(
         id=f"gen_{secrets.token_hex(4)}",
