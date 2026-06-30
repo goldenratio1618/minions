@@ -6,7 +6,7 @@ import random
 import secrets
 import string
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Tuple
 
 from .constants import OPPONENT, Phase, TERRAIN_LABELS, TEAMS, Terrain
@@ -770,6 +770,8 @@ def research_unit(game: Game, color: str) -> UnitTemplate:
         raise RuleError(f"research costs ${RESEARCH_COST}")
     game.teams[color].souls -= RESEARCH_COST
     unit = generate_random_unit(turn_number=game.turn_number)
+    if game.mode == GAME_MODE_RANDOM_UNITS:
+        unit = replace(unit, cost=unit.cost - RESEARCH_COST)
     game.teams[color].researched[unit.id] = unit
     game.unit_catalog[unit.id] = unit
     game.log.append(f"{color.title()} researched {unit.name} (${unit.cost}/{unit.rebate}).")
@@ -1116,7 +1118,10 @@ def _resolve_spell(game: Game, color: str, board: BoardState, spell_id: str, pay
             raise RuleError("choose a minion from reinforcements")
         spawn_reinforcement(game, color, board.index, target.id, template_id, int(payload["q"]), int(payload["r"]), via_spell=True)
     elif spell_id == "spawn":
-        _friendly_minion(game, color, board, target_id).effects.append(TimedEffect("Spawn", color, spawn=True))
+        target = _friendly_minion(game, color, board, target_id)
+        if game.unit_stats(target)["blink"]:
+            raise RuleError("units cannot have both Spawn and Blink")
+        target.effects.append(TimedEffect("Spawn", color, spawn=True))
     elif spell_id == "raise_zombie":
         target = _friendly_minion(game, color, board, target_id)
         spawn_reinforcement(game, color, board.index, target.id, "zombie", int(payload["q"]), int(payload["r"]), free=True, via_spell=True)

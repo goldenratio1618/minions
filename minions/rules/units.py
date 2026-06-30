@@ -33,6 +33,10 @@ class UnitTemplate:
     minion: bool = True
     generated: bool = False
 
+    def __post_init__(self) -> None:
+        if self.spawn and self.blink:
+            raise ValueError("units cannot have both Spawn and Blink")
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -314,6 +318,11 @@ def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA, turn_
     spawn = rng.random() < keyword_chance
     persistent = rng.random() < keyword_chance
     blink = rng.random() < keyword_chance
+    if spawn and blink:
+        if rng.random() < 0.5:
+            blink = False
+        else:
+            spawn = False
     flurry = rng.random() < keyword_chance
     ward = 1 if rng.random() < keyword_chance else 0
     flying = rng.random() < keyword_chance

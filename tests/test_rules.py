@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from minions.rules.constants import Phase, Terrain
 from minions.rules.coords import Hex, distance, neighbors, reflect_necromancer_axis
@@ -40,6 +41,10 @@ class UnitGeneratorTests(unittest.TestCase):
         self.assertEqual(unit_generation_power_multiplier(31), 0.5)
         self.assertEqual(unit_generation_power_multiplier(90), 0.5)
 
+    def test_units_cannot_have_spawn_and_blink(self):
+        with self.assertRaisesRegex(ValueError, "Spawn and Blink"):
+            UnitTemplate("bad", "Bad", 1, 0, 1, 1, 1, 1, spawn=True, blink=True)
+
     def test_sorcerer_auxiliary_stats(self):
         sorcerer = next(unit for unit in EXISTING_UNITS if unit.id == "sorcerer")
         self.assertTrue(sorcerer.flurry)
@@ -66,6 +71,11 @@ class UnitGeneratorTests(unittest.TestCase):
             unit = generate_random_unit(seed=seed)
             if unit.attack == 1 or unit.attack == "*":
                 self.assertFalse(unit.flurry)
+
+    def test_generated_units_never_have_spawn_and_blink(self):
+        for seed in range(500):
+            unit = generate_random_unit(seed=seed, turn_number=31)
+            self.assertFalse(unit.spawn and unit.blink)
 
     def test_generated_units_strengthen_with_turn_number(self):
         early = [unit_power(generate_random_unit(seed=seed, turn_number=1)) for seed in range(80)]
@@ -167,6 +177,31 @@ class GameplayTests(unittest.TestCase):
         apply_action(game, "yellow", "buy", {"board": 0, "templateId": unit.id})
         self.assertNotIn(unit.id, game.teams["yellow"].researched)
         self.assertIn(unit.id, game.boards[0].reinforcements["yellow"])
+
+    def test_random_units_research_discount_reduces_purchase_cost(self):
+        game = create_game(board_count=1, seed=4)
+        game.teams["yellow"].souls = 2
+        generated = UnitTemplate("cheap", "Cheap", 1, 0, 1, 1, 1, 1, generated=True)
+        with patch("minions.rules.game.generate_random_unit", return_value=generated):
+            unit = research_unit(game, "yellow")
+
+        self.assertEqual(unit.cost, -1)
+        self.assertEqual(game.teams["yellow"].researched[unit.id].cost, -1)
+
+        game.teams["yellow"].souls = 0
+        apply_action(game, "yellow", "buy", {"board": 0, "templateId": unit.id})
+
+        self.assertEqual(game.teams["yellow"].souls, 1)
+        self.assertIn(unit.id, game.boards[0].reinforcements["yellow"])
+
+    def test_subscriptions_mode_does_not_discount_researched_unit_cost(self):
+        game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
+        game.teams["yellow"].souls = 2
+        generated = UnitTemplate("normal", "Normal", 3, 1, 1, 1, 1, 1, generated=True)
+        with patch("minions.rules.game.generate_random_unit", return_value=generated):
+            unit = research_unit(game, "yellow")
+
+        self.assertEqual(unit.cost, 3)
 
     def test_subscriptions_deliver_units_on_next_team_turn(self):
         game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
@@ -334,6 +369,19 @@ class GameplayTests(unittest.TestCase):
         board.units["ghost"] = UnitInstance("ghost", ghost.id, "blue", "5,5")
         apply_action(game, "blue", "spawn_terrain", {"board": 0, "sourceId": "ghost", "terrain": Terrain.FLOOD.value, "q": 6, "r": 5})
         self.assertEqual(board.terrain[Terrain.FLOOD.value], "6,5")
+
+    def test_spawn_spell_cannot_give_spawn_to_blink_unit(self):
+        game = create_game(board_count=1, seed=16)
+        board = game.boards[0]
+        board.units.clear()
+        void = next(unit for unit in EXISTING_UNITS if unit.id == "void")
+        game.unit_catalog[void.id] = void
+        board.units["void"] = UnitInstance("void", void.id, "yellow", "5,5")
+        card = make_card("spawn")
+        board.spells["yellow"] = [card]
+
+        with self.assertRaisesRegex(ValueError, "Spawn and Blink"):
+            apply_action(game, "yellow", "cast_spell", {"board": 0, "cardId": card["cardId"], "targetId": "void"})
 
     def test_generated_units_spawn_at_most_one_terrain_type(self):
         for seed in range(250):
