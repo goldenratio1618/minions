@@ -302,8 +302,61 @@ def _greedy_refine_cost_rebate(cost: int, rebate: int, target: float) -> Tuple[i
         current = best
 
 
-NAME_PARTS_A = ["Ash", "Bone", "Crypt", "Dread", "Grim", "Mire", "Night", "Pale", "Rot", "Void"]
-NAME_PARTS_B = ["binder", "claw", "gazer", "hound", "moth", "reaver", "shade", "skulk", "thorn", "walker"]
+ATTACK_NAME_PARTS = ["Dread", "Grim", "Mire", "Rot"]
+DEFENSE_NAME_PARTS = ["Ash", "Bone", "Crypt", "Pale"]
+
+
+def thematic_unit_name(unit: UnitTemplate, rng: Optional[random.Random] = None) -> str:
+    chooser = rng or random
+    if unit.attack == "*":
+        part_a = "Void"
+    else:
+        attack = attack_for_power(unit.attack)
+        if attack > unit.defense:
+            part_a = chooser.choice(ATTACK_NAME_PARTS)
+        elif unit.defense > attack:
+            part_a = chooser.choice(DEFENSE_NAME_PARTS)
+        else:
+            part_a = "Night"
+
+    if unit.lumbering:
+        part_b = "thorn"
+    elif unit.flying and unit.speed > 1 and unit.cost <= 3:
+        part_b = "moth"
+    elif unit.flying and unit.speed > 1 and unit.cost >= 4:
+        part_b = "shade"
+    elif unit.flying and unit.speed == 1:
+        part_b = "skulk"
+    elif unit.speed == 3 and unit.range == 1:
+        part_b = "hound"
+    elif unit.range == 1 and unit.speed == 2:
+        part_b = "claw"
+    elif unit.range == 1 and unit.speed == 1:
+        part_b = "walker"
+    elif unit.range > 1 and unit.speed == 1 and unit.cost < 4:
+        part_b = "binder"
+    elif unit.range > 1 and unit.speed == 1 and unit.cost >= 4:
+        part_b = "gazer"
+    elif unit.range > 1 and unit.speed > 1:
+        part_b = "reaver"
+    else:
+        part_b = "walker"
+    return f"{part_a} {part_b.title()}"
+
+
+def unique_unit_name(name: str, existing_names: Iterable[str]) -> str:
+    highest = 0
+    prefix = f"{name} "
+    for existing in existing_names:
+        if existing == name:
+            highest = max(highest, 1)
+        elif existing.startswith(prefix):
+            suffix = existing[len(prefix) :]
+            if suffix.isdigit():
+                highest = max(highest, int(suffix))
+    if highest == 0:
+        return name
+    return f"{name} {highest + 1}"
 
 
 def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA, turn_number: int = 1) -> UnitTemplate:
@@ -358,7 +411,7 @@ def generate_random_unit(seed: Optional[int] = None, alpha: float = ALPHA, turn_
         predicted_expression(draft, alpha, power_multiplier=unit_generation_power_multiplier(turn_number)),
         rng,
     )
-    name = f"{rng.choice(NAME_PARTS_A)} {rng.choice(NAME_PARTS_B).title()}"
+    name = thematic_unit_name(draft, rng)
     return UnitTemplate(
         id=f"gen_{secrets.token_hex(4)}",
         name=name,

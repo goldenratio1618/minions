@@ -22,6 +22,8 @@ from .units import (
     effective_stats,
     generate_random_unit,
     new_unit_id,
+    thematic_unit_name,
+    unique_unit_name,
 )
 
 
@@ -772,6 +774,8 @@ def research_unit(game: Game, color: str) -> UnitTemplate:
     unit = generate_random_unit(turn_number=game.turn_number)
     if game.mode == GAME_MODE_RANDOM_UNITS:
         unit = replace(unit, cost=unit.cost - RESEARCH_COST)
+    name = thematic_unit_name(unit)
+    unit = replace(unit, name=unique_unit_name(name, (template.name for template in game.unit_catalog.values())))
     game.teams[color].researched[unit.id] = unit
     game.unit_catalog[unit.id] = unit
     game.log.append(f"{color.title()} researched {unit.name} (${unit.cost}/{unit.rebate}).")

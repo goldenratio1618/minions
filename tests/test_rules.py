@@ -6,7 +6,7 @@ from minions.rules.coords import Hex, distance, neighbors, reflect_necromancer_a
 from minions.rules.game import GAME_MODE_SUBSCRIPTIONS, RESEARCH_COST, apply_action, can_enter, create_game, end_turn, is_unit_spawn_destination, move_unit, research_unit, set_phase, unit_on_hex
 from minions.rules.maps import generate_map
 from minions.rules.spells import make_card
-from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, UnitInstance, UnitTemplate, attack_for_power, generate_random_unit, predicted_expression, unit_generation_power_multiplier, unit_power
+from minions.rules.units import ALPHA, BASE_UNITS, EXISTING_UNITS, UnitInstance, UnitTemplate, attack_for_power, generate_random_unit, predicted_expression, thematic_unit_name, unit_generation_power_multiplier, unit_power
 
 
 class MapGeneratorTests(unittest.TestCase):
@@ -81,6 +81,35 @@ class UnitGeneratorTests(unittest.TestCase):
         early = [unit_power(generate_random_unit(seed=seed, turn_number=1)) for seed in range(80)]
         late = [unit_power(generate_random_unit(seed=seed, turn_number=31)) for seed in range(80)]
         self.assertGreater(sum(late) / len(late), sum(early) / len(early))
+
+    def test_thematic_name_part_a_tracks_attack_and_defense(self):
+        self.assertEqual(thematic_unit_name(UnitTemplate("void", "Old", 4, 1, "*", 5, 1, 1)), "Void Walker")
+        self.assertIn(
+            thematic_unit_name(UnitTemplate("attack", "Old", 4, 1, 5, 2, 1, 1)).split()[0],
+            {"Dread", "Grim", "Mire", "Rot"},
+        )
+        self.assertIn(
+            thematic_unit_name(UnitTemplate("defense", "Old", 4, 1, 2, 5, 1, 1)).split()[0],
+            {"Ash", "Bone", "Crypt", "Pale"},
+        )
+        self.assertEqual(thematic_unit_name(UnitTemplate("tie", "Old", 4, 1, 3, 3, 1, 1)), "Night Walker")
+
+    def test_thematic_name_part_b_priority(self):
+        cases = [
+            (UnitTemplate("lumbering", "Old", 2, 0, 2, 2, 2, 2, flying=True, lumbering=True), "Night Thorn"),
+            (UnitTemplate("cheap_flyer", "Old", 3, 1, 2, 2, 2, 1, flying=True), "Night Moth"),
+            (UnitTemplate("costly_flyer", "Old", 4, 1, 2, 2, 2, 1, flying=True), "Night Shade"),
+            (UnitTemplate("slow_flyer", "Old", 3, 1, 2, 2, 1, 1, flying=True), "Night Skulk"),
+            (UnitTemplate("hound", "Old", 3, 1, 2, 2, 3, 1), "Night Hound"),
+            (UnitTemplate("claw", "Old", 3, 1, 2, 2, 2, 1), "Night Claw"),
+            (UnitTemplate("walker", "Old", 3, 1, 2, 2, 1, 1), "Night Walker"),
+            (UnitTemplate("binder", "Old", 3, 1, 2, 2, 1, 2), "Night Binder"),
+            (UnitTemplate("gazer", "Old", 4, 1, 2, 2, 1, 2), "Night Gazer"),
+            (UnitTemplate("reaver", "Old", 4, 1, 2, 2, 2, 2), "Night Reaver"),
+        ]
+        for unit, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(thematic_unit_name(unit), expected)
 
 
 class GameplayTests(unittest.TestCase):
@@ -194,6 +223,20 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(game.teams["yellow"].souls, 1)
         self.assertIn(unit.id, game.boards[0].reinforcements["yellow"])
 
+    def test_random_units_name_after_discount_and_avoid_collisions(self):
+        game = create_game(board_count=1, seed=4)
+        game.teams["yellow"].souls = 4
+        generated = [
+            UnitTemplate("first", "Old", 5, 1, 2, 2, 2, 1, flying=True, generated=True),
+            UnitTemplate("second", "Old", 5, 1, 2, 2, 2, 1, flying=True, generated=True),
+        ]
+        with patch("minions.rules.game.generate_random_unit", side_effect=generated):
+            first = research_unit(game, "yellow")
+            second = research_unit(game, "yellow")
+
+        self.assertEqual(first.name, "Night Moth")
+        self.assertEqual(second.name, "Night Moth 2")
+
     def test_subscriptions_mode_does_not_discount_researched_unit_cost(self):
         game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
         game.teams["yellow"].souls = 2
@@ -202,6 +245,15 @@ class GameplayTests(unittest.TestCase):
             unit = research_unit(game, "yellow")
 
         self.assertEqual(unit.cost, 3)
+
+    def test_subscriptions_name_uses_full_researched_cost(self):
+        game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
+        game.teams["yellow"].souls = 2
+        generated = UnitTemplate("flyer", "Old", 5, 1, 2, 2, 2, 1, flying=True, generated=True)
+        with patch("minions.rules.game.generate_random_unit", return_value=generated):
+            unit = research_unit(game, "yellow")
+
+        self.assertEqual(unit.name, "Night Shade")
 
     def test_subscriptions_deliver_units_on_next_team_turn(self):
         game = create_game(board_count=1, seed=4, mode=GAME_MODE_SUBSCRIPTIONS, subscription_length=5)
